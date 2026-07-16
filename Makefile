@@ -3,42 +3,38 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -e -o pipefail -c
 .SUFFIXES:
 
-# Top-level orchestration for the single-GB10 inference engines.
+# Top-level control for the LLM services. Acts on ONE engine at a time —
+# it never stops the others, so e.g. bringing vLLM up leaves ollama alone.
 #
 # Run from the directory that holds the stack subdirs: the repo root, or
-# /opt on the host (where traefik/, vllm/, llama-cpp/, open-webui/, … are
-# siblings). Override ROOT if they live elsewhere.
+# /opt on the host (where vllm/, llama-cpp/, open-webui/, … are siblings).
+# Override ROOT if they live elsewhere.
 #
-# GPU exclusivity: vLLM (--gpu-memory-utilization 0.9) and llama-cpp classic
-# single-model mode (-ngl 999) claim VRAM eagerly at startup; ollama and
-# llama-cpp router mode are lazy. The engine targets below bring one engine
-# up after stopping the others, so the eager claimants never collide.
+# GPU note: vLLM (--gpu-memory-utilization 0.9) and llama-cpp classic mode
+# (-ngl 999) claim VRAM eagerly, so they can't share the GB10 with another
+# eager engine. ollama and llama-cpp router mode are lazy. Managing that
+# trade-off is left to you — `make down engine=<other>` first when needed.
 ROOT ?= .
 
-# ollama lives in the open-webui compose project (shared with the UI, which
-# depends_on it) — so it is (re)started via that project, not a dir of its own.
-COMPOSE_OLLAMA := docker compose -f $(ROOT)/open-webui/docker-compose.yml
+# LLM services this Makefile knows about. ollama + open-webui live together
+# in the open-webui compose project (the UI depends_on ollama).
+ENGINES := vllm llama-cpp ollama open-webui
 
-# Backend container names (== compose service names in this project).
-INFER_ENGINES := vllm llama-cpp ollama
-ALL_BACKENDS  := traefik cloudflare tailscale vllm llama-cpp ollama open-webui netdata
-
-.PHONY: help status list vllm llama ollama stop-infer
+.PHONY: help status list up down
 
 help:  ## Show this help.
-	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-12s\033[0m %s\n",$$1,$$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-10s\033[0m %s\n",$$1,$$2}' $(MAKEFILE_LIST)
 	@echo
-	@echo "Engines are GPU-exclusive — each target stops the others first:"
-	@echo "  make vllm ENV=<name>    — start vLLM with that variant"
-	@echo "  make llama [ENV=<name>] — start llama-cpp (empty ENV = router mode)"
-	@echo "  make ollama             — start ollama"
-	@echo "  make stop-infer         — stop every inference engine (free the GPU)"
-	@echo "  make status             — health of every backend + GPU residency"
-	@echo "  make list               — available model variants per engine"
+	@echo "Engines: $(ENGINES)"
+	@echo "  make up engine=vllm ENV=<variant>   — start one engine"
+	@echo "  make up engine=llama-cpp            — llama-cpp, empty ENV = router mode"
+	@echo "  make down engine=vllm               — stop just that engine"
+	@echo "  make status                         — state/health of the LLM services + GPU"
+	@echo "  make list                           — model variants for vllm / llama-cpp"
 
-status:  ## Show every backend's state/health and actual GPU residency.
-	@echo "backends:"
-	@for c in $(ALL_BACKENDS); do \
+status:  ## Show each LLM service's state/health and actual GPU residency.
+	@echo "services:"
+	@for c in $(ENGINES); do \
 	    if state=$$(docker inspect -f '{{.State.Status}}' "$$c" 2>/dev/null); then \
 	        health=$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "$$c" 2>/dev/null); \
 	        printf '  %-12s %-9s %s\n' "$$c" "$$state" "$$health"; \
@@ -55,31 +51,42 @@ status:  ## Show every backend's state/health and actual GPU residency.
 	    echo "  nvidia-smi unavailable"; \
 	fi
 
-list:  ## List available model variants for each engine.
+list:  ## List available model variants for vllm and llama-cpp.
 	@echo "vllm:";      $(MAKE) -s -C $(ROOT)/vllm list      2>/dev/null | sed 's/^/  /' || echo "  (unavailable)"
 	@echo "llama-cpp:"; $(MAKE) -s -C $(ROOT)/llama-cpp list 2>/dev/null | sed 's/^/  /' || echo "  (unavailable)"
 
-vllm:  ## Start vLLM (stops llama-cpp + ollama first). Usage: make vllm ENV=<name>
-	@$(MAKE) -s stop-infer
-	$(MAKE) -C $(ROOT)/vllm up ENV=$(ENV)
+up:  ## Start one engine. Usage: make up engine=<name> [ENV=<variant>]
+	@case "$(engine)" in \
+	    vllm|llama-cpp) \
+	        $(MAKE) -C "$(ROOT)/$(engine)" up ENV="$(ENV)" ;; \
+	    ollama) \
+	        ( cd "$(ROOT)/open-webui" && docker compose up -d ollama ) ;; \
+	    open-webui) \
+	        ( cd "$(ROOT)/open-webui" && docker compose up -d ) ;; \
+	    "") \
+	        echo "usage: make up engine=<name> [ENV=<variant>]" >&2; \
+	        echo "engines: $(ENGINES)" >&2; exit 64 ;; \
+	    *) \
+	        echo "unknown engine: $(engine)" >&2; \
+	        echo "engines: $(ENGINES)" >&2; exit 64 ;; \
+	esac
 
-llama:  ## Start llama-cpp (stops vLLM + ollama first). Usage: make llama [ENV=<name>]
-	@$(MAKE) -s stop-infer
-	$(MAKE) -C $(ROOT)/llama-cpp up ENV=$(ENV)
-
-ollama:  ## Start ollama (stops vLLM + llama-cpp first).
-	@$(MAKE) -s stop-infer
-	@docker start ollama >/dev/null 2>&1 \
-	    && echo "→ started ollama" \
-	    || $(COMPOSE_OLLAMA) up -d ollama
-
-stop-infer:  ## Stop every inference engine to free the GPU.
-	@for c in $(INFER_ENGINES); do \
-	    if [[ "$$(docker inspect -f '{{.State.Running}}' "$$c" 2>/dev/null)" == "true" ]]; then \
-	        echo "→ stopping $$c"; docker stop "$$c" >/dev/null; \
-	        if [[ "$$c" == "ollama" ]]; then \
-	            echo "  note: ollama has restart:unless-stopped — a Docker daemon"; \
-	            echo "        restart will bring it back and it may contend for the GPU."; \
-	        fi; \
-	    fi; \
-	done
+down:  ## Stop one engine (leaves the others running). Usage: make down engine=<name>
+	@case "$(engine)" in \
+	    vllm|llama-cpp|ollama|open-webui) \
+	        if [[ "$$(docker inspect -f '{{.State.Running}}' "$(engine)" 2>/dev/null)" == "true" ]]; then \
+	            echo "→ stopping $(engine)"; docker stop "$(engine)" >/dev/null; \
+	            if [[ "$(engine)" == "ollama" ]]; then \
+	                echo "  note: ollama has restart:unless-stopped — a Docker daemon"; \
+	                echo "        restart will bring it back and it may contend for the GPU."; \
+	            fi; \
+	        else \
+	            echo "$(engine) is not running"; \
+	        fi ;; \
+	    "") \
+	        echo "usage: make down engine=<name>" >&2; \
+	        echo "engines: $(ENGINES)" >&2; exit 64 ;; \
+	    *) \
+	        echo "unknown engine: $(engine)" >&2; \
+	        echo "engines: $(ENGINES)" >&2; exit 64 ;; \
+	esac
