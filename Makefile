@@ -20,7 +20,7 @@ ROOT ?= .
 # in the open-webui compose project (the UI depends_on ollama).
 ENGINES := vllm llama-cpp ollama open-webui
 
-.PHONY: help status list up down
+.PHONY: help list up down
 
 help:  ## Show this help.
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-10s\033[0m %s\n",$$1,$$2}' $(MAKEFILE_LIST)
@@ -29,27 +29,9 @@ help:  ## Show this help.
 	@echo "  make up engine=vllm ENV=<variant>   — start one engine"
 	@echo "  make up engine=llama-cpp            — llama-cpp, empty ENV = router mode"
 	@echo "  make down engine=vllm               — stop just that engine"
-	@echo "  make status                         — state/health of the LLM services + GPU"
 	@echo "  make list                           — model variants for vllm / llama-cpp"
-
-status:  ## Show each LLM service's state/health and actual GPU residency.
-	@echo "services:"
-	@for c in $(ENGINES); do \
-	    if state=$$(docker inspect -f '{{.State.Status}}' "$$c" 2>/dev/null); then \
-	        health=$$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "$$c" 2>/dev/null); \
-	        printf '  %-12s %-9s %s\n' "$$c" "$$state" "$$health"; \
-	    else \
-	        printf '  %-12s %s\n' "$$c" "absent"; \
-	    fi; \
-	done
 	@echo
-	@echo "GPU residency (source of truth — ollama/router are lazy, so 'running' != 'on GPU'):"
-	@if command -v nvidia-smi >/dev/null 2>&1; then \
-	    apps=$$(nvidia-smi --query-compute-apps=pid,used_memory,process_name --format=csv,noheader 2>/dev/null); \
-	    if [[ -n "$$apps" ]]; then echo "$$apps" | sed 's/^/  /'; else echo "  (no compute processes)"; fi; \
-	else \
-	    echo "  nvidia-smi unavailable"; \
-	fi
+	@echo "What's running: docker ps -a   |   what's on the GPU: nvidia-smi"
 
 list:  ## List available model variants for vllm and llama-cpp.
 	@echo "vllm:";      $(MAKE) -s -C $(ROOT)/vllm list      2>/dev/null | sed 's/^/  /' || echo "  (unavailable)"
