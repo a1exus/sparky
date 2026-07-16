@@ -1,0 +1,51 @@
+# Trivy vulnerability allowlist.
+#
+# WHAT THIS IS
+#   Trivy (both the CLI you run locally and the trivy-action in
+#   .github/workflows/trivy.yml) auto-reads this file from the repo root and
+#   suppresses the listed CVE IDs. CI gates `push` / `pull_request` on
+#   CRITICAL, fixed-only findings; every entry below is one such finding that
+#   would otherwise fail the `image-scan` gate.
+#
+# WHY WE ALLOWLIST INSTEAD OF PATCHING
+#   All entries are base-OS Debian packages baked into UPSTREAM images we
+#   consume but do not build (we have no Dockerfile for them). We cannot patch
+#   them — they clear only when the upstream publisher rebases the image's base
+#   layer. `.env.example` tracks floating tags, so a plain `docker compose pull`
+#   on the host already picks up the fix the moment upstream ships it.
+#
+# HOW TO REVISIT
+#   The weekly scheduled Trivy run (Mondays, non-gating) re-scans the live tag
+#   and resurfaces anything still present in the Security tab. When an entry no
+#   longer appears there (or `trivy image <ref>` locally stops reporting it),
+#   delete the line. Keep this list minimal — only CVEs that actively fail the
+#   gate belong here.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Source image: ghcr.io/open-webui/open-webui:latest  (open-webui/ stack)
+# Discovered:   2026-07-16, CI run 29466589985 — the `image-scan (open-webui)`
+#               CRITICAL gate; all four are Debian 12 (bookworm) base packages.
+# Exposure:     Open WebUI here is a single-user chat UI behind Traefik on the
+#               LAN / Cloudflare tunnel — no MariaDB server process, no Mesa GPU
+#               render path, and linux-libc-dev ships only kernel *headers*, not
+#               a running kernel. None of these vectors are reachable as run.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# libgbm1 (Mesa) — out-of-bounds write. Debian fix: 22.3.6-1+deb12u2.
+# https://avd.aquasec.com/nvd/cve-2026-40393
+CVE-2026-40393
+
+# libmariadb-dev / libmariadb3 / mariadb-common — SQL injection in MariaDB
+# server. Debian fix: 1:10.11.18-0+deb12u1. Client libs only in this image; no
+# server runs. https://avd.aquasec.com/nvd/cve-2026-44172
+CVE-2026-44172
+
+# mariadb libs — arbitrary code execution in MariaDB server. Debian fix:
+# 1:10.11.18-0+deb12u1. Same no-server rationale as CVE-2026-44172.
+# https://avd.aquasec.com/nvd/cve-2026-49261
+CVE-2026-49261
+
+# linux-libc-dev — kernel net/mvpp2 RX-buffer refill (headers package, not a
+# running kernel). Debian fix: 6.1.176-1.
+# https://avd.aquasec.com/nvd/cve-2026-53215
+CVE-2026-53215
