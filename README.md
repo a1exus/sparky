@@ -42,6 +42,7 @@ TLS comes from three different roots: Traefik mints its own internal CA (clients
 ├── netdata/       # Real-time observability
 ├── mdns/          # Host-side mDNS aliases helper
 ├── .github/       # CI: Trivy workflow + Dependabot config
+├── Makefile       # top-level LLM-engine control (up / down / list)
 ├── sparky.svg     # Project logo (AI self-portrait)
 ├── CHANGELOG.md
 ├── LICENSE
@@ -147,6 +148,21 @@ After the pull, apply the change in the relevant stack (each stack's README has 
 - **Other stacks** — `cd /opt/<name> && docker compose up -d`.
 
 Host-local files outside git stay put across pulls — each stack's `.env` (secrets), inference `envs/*.env` variants, TLS material (`*.crt`/`*.key`), and `*.bak` backups are all gitignored.
+
+## Managing the LLM engines
+
+The top-level [`Makefile`](Makefile) (at `/opt/Makefile` on the host) is a thin wrapper over the four LLM services — it acts on **one engine at a time and never touches the others**:
+
+```bash
+make up engine=vllm ENV=<variant>    # start one engine
+make up engine=llama-cpp             # llama-cpp with empty ENV = router mode
+make down engine=ollama              # stop just that one; the rest keep running
+make list                            # model variants for vllm / llama-cpp
+```
+
+Engines are `vllm`, `llama-cpp`, `ollama`, `open-webui`. `up engine=vllm|llama-cpp` delegates to that stack's own `make up` (so `ENV=` variant-layering still applies); `ollama`/`open-webui` go through the shared open-webui compose project. For what's running use `docker ps -a`; for what's actually on the GPU use `nvidia-smi`.
+
+vLLM (`--gpu-memory-utilization 0.9`) and llama-cpp classic single-model mode (`-ngl 999`) claim VRAM eagerly and can't co-reside with another eager engine on the GB10; ollama and llama-cpp router mode are lazy. The Makefile deliberately **doesn't** enforce that trade-off — run `make down engine=<other>` first when you need the whole GPU (a "running" container isn't necessarily on the GPU).
 
 ## Conventions
 

@@ -21,14 +21,25 @@ Single container on the shared `traefik` Docker network (defined by the `traefik
 
 `--gpu-memory-utilization 0.9` (default) reserves ~90% of VRAM at startup. The GB10 has 124 GiB total; Ollama and `llama-cpp/` also want VRAM, so vLLM can't coexist with either of them active. Hence `restart: "no"` here — manual-start.
 
+The top-level `Makefile` (at `/opt/Makefile`) makes the switch a one-liner per engine — it stops only what you name, so nothing else is disturbed:
+
 ```bash
-# Switching from ollama to vllm:
-docker compose -f /opt/open-webui/docker-compose.yml stop ollama
-cd /opt/vllm && make up ENV=<name>
+# Switching from ollama to vllm (run from /opt):
+make down engine=ollama
+make up   engine=vllm ENV=<name>
 
 # Going back:
-docker compose -f /opt/vllm/docker-compose.yml down
-docker compose -f /opt/open-webui/docker-compose.yml up -d
+make down engine=vllm
+make up   engine=ollama
+```
+
+Equivalent by hand:
+
+```bash
+docker compose -f /opt/open-webui/docker-compose.yml stop ollama
+cd /opt/vllm && make up ENV=<name>
+# back: docker compose -f /opt/vllm/docker-compose.yml down
+#       docker compose -f /opt/open-webui/docker-compose.yml up -d
 ```
 
 ## Files
@@ -57,13 +68,15 @@ Two layers:
 
 `make up ENV=<name>` chains both via `docker compose --env-file .env --env-file envs/<name>.env up -d` — variant wins where it specifies a value, falls back to `.env` otherwise. Edit `HF_TOKEN` once in `.env` and every variant picks it up; no token-duplication across variant files.
 
-Raw `docker compose ps / logs / down` reads only `.env`, which is enough to satisfy compose's `${VAR:?...}` checks (the `VLLM_MODEL=placeholder` in `.env.example` never reaches a real container — `make up` always overrides):
+Raw `docker compose ps / logs / down` reads only `.env`, which is enough to satisfy compose's `${VAR:?...}` checks:
 
 ```bash
 docker compose ps
 docker compose logs -f vllm
 docker compose down
 ```
+
+The `VLLM_MODEL=placeholder` in `.env.example` is a sentinel — it exists only to satisfy those `${VAR:?}` checks and must never reach a running container. `make up` always overrides it with a real model from `envs/<name>.env`. As a backstop, `entrypoint.sh` refuses to start (exit `78`, `EX_CONFIG`) when it sees `VLLM_MODEL=placeholder`, so a stray `docker compose up` (which skips the variant `--env-file` and would otherwise pass the placeholder through) fails fast with an actionable message instead of crash-looping on a 404 for the phantom HF repo `placeholder`. Start with `make up ENV=<name>` instead.
 
 ## Deploy
 
