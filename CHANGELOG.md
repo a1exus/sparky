@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-15
+
 ### Added
 
 - `.trivyignore` allowlist so the Trivy `image-scan` CRITICAL gate passes on findings we can't act on. Four base-OS Debian CVEs in the upstream `ghcr.io/open-webui/open-webui:latest` image — `libgbm1` (CVE-2026-40393), `libmariadb*`/`mariadb-common` (CVE-2026-44172, CVE-2026-49261), and `linux-libc-dev` (CVE-2026-53215) — were failing the gate; they're base-layer packages in an image we consume but don't build, none reachable as the container is run (no MariaDB server, no Mesa render path, headers-only kernel package), and each clears when Open WebUI rebases its base. Trivy auto-reads the file from the repo root, so both the SARIF scan and the gate honor it; every entry is documented inline (source image, discovery run, exposure, Debian fix version, advisory link). `.github/workflows/trivy.md` "Known findings" reworked into an "Accepted findings" section describing the `.trivyignore` mechanism (the previously-listed `cloudflared` CVE is no longer surfaced by the floating tag and was dropped).
@@ -173,7 +175,9 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `.gitignore` excludes `.env`, `*.crt`, `*.key`, and `docker-compose.override.yml`.
 - All third-party GitHub Actions pinned by commit SHA.
 
-[Unreleased]: https://github.com/a1exus/sparky/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/a1exus/sparky/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/a1exus/sparky/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/a1exus/sparky/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/a1exus/sparky/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/a1exus/sparky/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/a1exus/sparky/compare/v0.1.0...v0.2.0
