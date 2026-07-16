@@ -70,9 +70,13 @@ jobs:
     needs: extract-tags
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # No security-events:write — image CVEs are a build gate, not source-mapped
+    # Code Scanning results. Their SARIF locations are container-filesystem
+    # paths (usr/bin/…, site-packages/…) that don't exist in the repo, so
+    # uploading them makes Code Scanning report a configuration error. We gate
+    # on them instead and print the table to the run log.
     permissions:
       contents: read
-      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -96,22 +100,14 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      - name: Trivy image scan (SARIF, HIGH+CRITICAL)
+      - name: Trivy image scan (HIGH+CRITICAL, informational)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ${{ matrix.image }}
-          format: sarif
-          output: trivy-${{ matrix.name }}.sarif
+          format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: '0'
-
-      - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
-        with:
-          sarif_file: trivy-${{ matrix.name }}.sarif
-          category: trivy-${{ matrix.name }}
 
       - name: Gate on CRITICAL (skip on schedule)
         if: github.event_name != 'schedule'

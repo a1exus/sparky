@@ -14,17 +14,17 @@ Workflow: [`trivy.yml`](trivy.yml). Scans every container image we deploy plus t
 | Job | What it scans |
 |---|---|
 | `extract-tags` | Reads the image tag from each stack's `.env.example` (`*_TAG=` line) and exposes the values as job outputs. Tags are floating by repo convention (`latest`, `v2`, `server-cuda`, etc.); operators pin in their host-local `.env`. |
-| `image-scan` (matrix) | CVE scan of each image at the committed `.env.example` tag: `ollama/ollama`, `ghcr.io/open-webui/open-webui`, `netdata/netdata`, `ghcr.io/ggml-org/llama.cpp`, `vllm/vllm-openai`, `traefik`, `cloudflare/cloudflared`, `tailscale/tailscale`. Severity HIGH+CRITICAL, fixed-only. |
+| `image-scan` (matrix) | CVE scan of each image at the committed `.env.example` tag: `ollama/ollama`, `ghcr.io/open-webui/open-webui`, `netdata/netdata`, `ghcr.io/ggml-org/llama.cpp`, `vllm/vllm-openai`, `traefik`, `cloudflare/cloudflared`, `tailscale/tailscale`. Severity HIGH+CRITICAL, fixed-only. **Gate-only** — printed to the run log and gated on CRITICAL; **not** uploaded to Code Scanning (see below). |
 | `config-scan` | Trivy IaC config check across the whole repo (compose misconfig, etc.). |
 | `secret-scan` | Filesystem scan for accidentally-committed secrets. |
 
-All findings are uploaded as SARIF to the repo's [Security tab](https://github.com/a1exus/sparky/security/code-scanning).
+Only `config-scan` and `secret-scan` upload SARIF to the repo's [Security tab](https://github.com/a1exus/sparky/security/code-scanning) — they scan the repo filesystem, so their results map to real source files. `image-scan` is deliberately **not** uploaded: container-image CVEs carry image-filesystem locations (`usr/bin/…`, `site-packages/…`) that don't exist in the repo, and Code Scanning (a source-analysis tool) reports a configuration error when asked to map them. Image CVEs are a supply-chain **gate**, not source findings — they block the build and appear in the job log.
 
 ## Gating
 
 - **Push / PR** — fails on any CRITICAL CVE or any leaked secret. Blocks merges on real regressions.
 - **Scheduled** — never fails. Upstream CVEs against today's tag resolution shouldn't break the green badge; new findings still surface in the Security tab so we (and any operator pinning to a specific version in their `.env`) know when to upgrade.
-- **Allowlist** — Trivy auto-reads [`.trivyignore`](../../.trivyignore) from the repo root (both the SARIF scan and the CRITICAL gate honor it). Use it only for CRITICAL, fixed-only findings in base layers of upstream images we consume but don't build — see [Accepted findings](#accepted-findings) for the rationale and per-entry provenance.
+- **Allowlist** — Trivy auto-reads [`.trivyignore`](../../.trivyignore) from the repo root; the CRITICAL image gate honors it. Use it only for CRITICAL, fixed-only findings in base layers of upstream images we consume but don't build — see [Accepted findings](#accepted-findings) for the rationale and per-entry provenance.
 
 ## Hardening
 
