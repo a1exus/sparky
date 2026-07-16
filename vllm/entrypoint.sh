@@ -5,6 +5,23 @@
 
 set -euo pipefail
 
+# Fail fast on the placeholder sentinel. vllm/.env.example ships
+# VLLM_MODEL=placeholder purely to satisfy the compose file's ${VAR:?}
+# required-check so raw `docker compose ps/logs/down` work without an
+# --env-file. It must never reach a real container: vLLM would try to pull
+# the HF repo "placeholder", 404, and crash-loop behind an opaque traceback.
+# That happens when the stack is started with raw `docker compose up` instead
+# of `make up ENV=<name>` (which layers envs/<name>.env with the real model
+# on top of .env).
+if [[ "${VLLM_MODEL:-}" == "placeholder" ]]; then
+    echo "refusing to start: VLLM_MODEL is still the 'placeholder' sentinel." >&2
+    echo "raw \`docker compose up\` reads only .env, whose placeholder is never" >&2
+    echo "overridden. start with a real model instead:" >&2
+    echo "    make list             # show available variants" >&2
+    echo "    make up ENV=<name>    # layers envs/<name>.env on top of .env" >&2
+    exit 78   # EX_CONFIG (sysexits.h) — configuration error
+fi
+
 args=(
     --model                  "${VLLM_MODEL:?VLLM_MODEL must be set}"
     --served-model-name      "${VLLM_SERVED_NAME:-${VLLM_MODEL}}"
