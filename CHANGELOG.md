@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-15
+
+### Fixed
+
+- Trivy `image-scan` no longer uploads SARIF to GitHub Code Scanning, which was raising a "Code scanning configuration error." Container-image CVEs carry image-filesystem locations (`usr/bin/…`, `site-packages/…`, `<repo>/<image>`) that don't exist in the repo, and Code Scanning — a source-analysis tool — errors when it can't map them to source files. Image scanning is now **gate-only**: the HIGH+CRITICAL table prints to the run log and the CRITICAL gate still blocks (honoring `.trivyignore`), but nothing is pushed to the Security tab. `config-scan` and `secret-scan` still upload SARIF — they scan the repo filesystem, so their results map to real files. The `image-scan` job also drops its `security-events: write` permission (least privilege; it no longer writes Code Scanning results). `.github/workflows/trivy.md` "Jobs"/"Gating" updated to match.
+
 ## [0.6.0] - 2026-07-15
 
 ### Added
@@ -175,7 +181,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `.gitignore` excludes `.env`, `*.crt`, `*.key`, and `docker-compose.override.yml`.
 - All third-party GitHub Actions pinned by commit SHA.
 
-[Unreleased]: https://github.com/a1exus/sparky/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/a1exus/sparky/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/a1exus/sparky/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/a1exus/sparky/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/a1exus/sparky/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/a1exus/sparky/compare/v0.3.0...v0.4.0
