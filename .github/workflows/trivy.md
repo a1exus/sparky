@@ -24,6 +24,7 @@ All findings are uploaded as SARIF to the repo's [Security tab](https://github.c
 
 - **Push / PR** — fails on any CRITICAL CVE or any leaked secret. Blocks merges on real regressions.
 - **Scheduled** — never fails. Upstream CVEs against today's tag resolution shouldn't break the green badge; new findings still surface in the Security tab so we (and any operator pinning to a specific version in their `.env`) know when to upgrade.
+- **Allowlist** — Trivy auto-reads [`.trivyignore`](../../.trivyignore) from the repo root (both the SARIF scan and the CRITICAL gate honor it). Use it only for CRITICAL, fixed-only findings in base layers of upstream images we consume but don't build — see [Accepted findings](#accepted-findings) for the rationale and per-entry provenance.
 
 ## Hardening
 
@@ -39,11 +40,18 @@ All findings are uploaded as SARIF to the repo's [Security tab](https://github.c
 - Adding a new stack: extend `extract-tags` to read the new `<stack>/.env.example`, then add an entry to the `image-scan` matrix referencing the new tag output.
 - Bumping `aquasecurity/trivy-action` itself: resolve the new tag to a commit SHA and update all three `uses:` lines together.
 
-## Known findings
+## Accepted findings
 
-| Image | CVE | Library | Notes |
-|---|---|---|---|
-| `cloudflare/cloudflared:2026.5.0` | [CVE-2026-33186](https://avd.aquasec.com/nvd/cve-2026-33186) | `google.golang.org/grpc` v1.72.2 (fixed in 1.79.3) | gRPC-Go authorization-bypass via HTTP/2 path validation. `cloudflared` is a gRPC **client** to Cloudflare's edge here — the attack vector requires an attacker-controlled server, not our scenario. Awaiting upstream rebuild — bump `CLOUDFLARED_TAG` in `cloudflare/.env.example` once a fixed tag ships. Until then, the `image-scan (cloudflared, …)` matrix job will fail the gate; other matrix jobs are unaffected. |
+Suppressed via [`.trivyignore`](../../.trivyignore) — each CVE is a base-OS Debian package in an upstream image we consume but don't build, so it clears only when upstream rebases its base layer. The file itself carries the full rationale (what, where discovered, exposure analysis, how to revisit); the table below is the summary. Remove an entry once the weekly scheduled run stops surfacing it.
+
+| Image | CVE | Package | Fixed in (Debian) | Why accepted |
+|---|---|---|---|---|
+| `ghcr.io/open-webui/open-webui:latest` | [CVE-2026-40393](https://avd.aquasec.com/nvd/cve-2026-40393) | `libgbm1` (Mesa) | 22.3.6-1+deb12u2 | Out-of-bounds write; no Mesa GPU render path in this container. |
+| `ghcr.io/open-webui/open-webui:latest` | [CVE-2026-44172](https://avd.aquasec.com/nvd/cve-2026-44172) | `libmariadb*` / `mariadb-common` | 1:10.11.18-0+deb12u1 | MariaDB **server** SQL injection; only client libs present, no server runs. |
+| `ghcr.io/open-webui/open-webui:latest` | [CVE-2026-49261](https://avd.aquasec.com/nvd/cve-2026-49261) | `mariadb` libs | 1:10.11.18-0+deb12u1 | MariaDB **server** RCE; same no-server rationale. |
+| `ghcr.io/open-webui/open-webui:latest` | [CVE-2026-53215](https://avd.aquasec.com/nvd/cve-2026-53215) | `linux-libc-dev` | 6.1.176-1 | Kernel net/mvpp2 fix in a **headers** package, not a running kernel. |
+
+All four were surfaced by the `image-scan (open-webui, …)` CRITICAL gate on 2026-07-16 ([run 29466589985](https://github.com/a1exus/sparky/actions/runs/29466589985)).
 
 ## Local equivalent
 
