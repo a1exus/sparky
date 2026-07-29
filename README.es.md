@@ -183,3 +183,7 @@ vLLM (`--gpu-memory-utilization 0.9`) y el modo clásico de un solo modelo de ll
 - [`docs/`](docs/) — documentos de diseño/planificación para funcionalidades concretas (p. ej. `docs/superpowers/specs/`, `docs/superpowers/plans/` para el trabajo del modo router de llama-cpp).
 - [`LICENSE`](LICENSE) — MIT.
 - [`sparky.svg`](sparky.svg) — mascota del proyecto. Dibujada por la IA que ayudó a construir este repo, como autorretrato.
+
+---
+
+Gracias a [@webbrain-one](https://github.com/webbrain-one) por proponer una versión en español de este README ([PR #21](https://github.com/a1exus/sparky/pull/21)).
