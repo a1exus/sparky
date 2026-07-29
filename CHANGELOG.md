@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Added
 
-- `README.es.md`: full Spanish translation of the top-level README, structurally identical to the English version (same headings, tables, code blocks — commands/paths/env vars left untranslated). Both `README.md` and `README.es.md` gained a language-switcher line under the logo linking to each other. Thanks to [@webbrain-one](https://github.com/webbrain-one) for proposing the idea in #21 (a separate `README.es-ES.md` PR, closed unmerged in favor of this version).
+- `README.es.md`, `README.ru.md`, `README.zh.md`: full Spanish, Russian, and Simplified Chinese translations of the top-level README, each structurally identical to the English version (same headings, tables, code blocks — commands/paths/env vars left untranslated). All four README files now carry a language-switcher line under the logo linking to one another. Thanks to [@webbrain-one](https://github.com/webbrain-one) for proposing the idea in PR #21 (a separate `README.es-ES.md` PR, closed unmerged in favor of this version).
 
 ### Fixed
 

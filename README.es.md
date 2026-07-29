@@ -4,7 +4,7 @@
   <img src="sparky.svg" alt="sparky" width="220" height="260">
 </p>
 
-<p align="center"><a href="README.md">English</a> | <b>Español</b></p>
+<p align="center"><a href="README.md">English</a> | <b>Español</b> | <a href="README.ru.md">Русский</a> | <a href="README.zh.md">中文</a></p>
 
 Configuración para la estación de trabajo [NVIDIA DGX Spark](https://amzn.to/47ZeWqZ) `spark-1822` — un entorno LLM autoalojado en una sola máquina:
 
@@ -49,7 +49,10 @@ El TLS proviene de tres raíces distintas: Traefik emite su propia CA interna (l
 ├── sparky.svg     # Logo del proyecto (autorretrato de la IA)
 ├── CHANGELOG.md
 ├── LICENSE
-└── README.md
+├── README.md
+├── README.es.md   # Traducción al español
+├── README.ru.md   # Traducción al ruso
+└── README.zh.md   # Traducción al chino simplificado
 ```
 
 Cada stack tiene su propio `README.md` — empieza ahí para detalles de despliegue / configuración / actualización.
@@ -181,9 +184,10 @@ vLLM (`--gpu-memory-utilization 0.9`) y el modo clásico de un solo modelo de ll
 - [`.github/workflows/trivy.yml`](.github/workflows/trivy.yml) — escaneo de CVEs de imágenes (HIGH+CRITICAL, solo con fix disponible), escaneo de configuración IaC, escaneo de secretos del filesystem. Doc: [`.github/workflows/trivy.md`](.github/workflows/trivy.md).
 - [`.github/dependabot.yml`](.github/dependabot.yml) — PR agrupado semanal para actualizar los pines de SHA de GitHub Actions.
 - [`docs/`](docs/) — documentos de diseño/planificación para funcionalidades concretas (p. ej. `docs/superpowers/specs/`, `docs/superpowers/plans/` para el trabajo del modo router de llama-cpp).
+- [`README.md`](README.md), [`README.ru.md`](README.ru.md), [`README.zh.md`](README.zh.md) — versiones en inglés, ruso y chino simplificado de este README, sincronizadas mediante la línea de cambio de idioma bajo el logo.
 - [`LICENSE`](LICENSE) — MIT.
 - [`sparky.svg`](sparky.svg) — mascota del proyecto. Dibujada por la IA que ayudó a construir este repo, como autorretrato.
 
 ---
 
-Gracias a [@webbrain-one](https://github.com/webbrain-one) por proponer una versión en español de este README ([PR #21](https://github.com/a1exus/sparky/pull/21)).
+Gracias a [@webbrain-one](https://github.com/webbrain-one) por proponer una versión en español de este README (PR #21).
