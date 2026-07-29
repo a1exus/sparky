@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `README.es.md`: full Spanish translation of the top-level README, structurally identical to the English version (same headings, tables, code blocks — commands/paths/env vars left untranslated). Both `README.md` and `README.es.md` gained a language-switcher line under the logo linking to each other.
+
+### Fixed
+
+- Top-level `README.md` Topology section: corrected the claim that `netdata` joins the shared `traefik` Docker network alongside the other backends. It actually runs with `network_mode: host` (needed for host-level PID/proc telemetry) and has no endpoint on that network — Traefik reaches it via a static route to `host.docker.internal:19999` in `traefik/dynamic/services.yml`, not container-name DNS.
+- Top-level `README.md` Layout tree and Repo housekeeping section: added the previously-undocumented `docs/` directory (`docs/superpowers/specs/`, `docs/superpowers/plans/` — design/planning docs for the llama-cpp router-mode work).
+
 ## [0.6.1] - 2026-07-15
 
 ### Fixed
