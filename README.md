@@ -4,6 +4,8 @@
   <img src="sparky.svg" alt="sparky" width="220" height="260">
 </p>
 
+<p align="center"><b>English</b> | <a href="README.es.md">Español</a></p>
+
 Configuration for the [NVIDIA DGX Spark](https://amzn.to/47ZeWqZ) workstation `spark-1822` — a single-box, self-hosted LLM setup:
 
 - **vLLM** and **llama.cpp** for inference (HF safetensors and GGUF respectively, both GPU-accelerated on the GB10).
@@ -25,7 +27,7 @@ public client   ──(DNS, Cloudflare edge)──>  cloudflared ──>  traefi
 tailnet client  ──(MagicDNS, WireGuard)──>  tailscale :443  ──>  traefik :80  ──>  backend
 ```
 
-Backends (`vllm`, `llama-cpp`, `open-webui`, `ollama`, `netdata`) all sit on a single shared Docker network named `traefik` — defined by the `traefik/` stack, joined as `external: true` by everyone else. The active proxy and both tunnel/sidecar connectors each attach to the same network and dial container names directly.
+Backends (`vllm`, `llama-cpp`, `open-webui`, `ollama`) all sit on a single shared Docker network named `traefik` — defined by the `traefik/` stack, joined as `external: true` by everyone else. The active proxy and both tunnel/sidecar connectors each attach to the same network and dial container names directly. `netdata` is the exception: it runs with `network_mode: host` (needed for host-level PID/proc telemetry), so it has no endpoint on the `traefik` network — Traefik reaches it via a static route to `host.docker.internal:19999` in `traefik/dynamic/services.yml` instead of container-name DNS.
 
 TLS comes from three different roots: Traefik mints its own internal CA (clients install `traefik-root.crt` once); Cloudflare provides publicly-trusted certs at its edge for the tunnel hostnames; Tailscale auto-provisions publicly-trusted MagicDNS certs for the tailnet hostname.
 
@@ -41,6 +43,7 @@ TLS comes from three different roots: Traefik mints its own internal CA (clients
 ├── open-webui/    # Open WebUI + Ollama (chat UI)
 ├── netdata/       # Real-time observability
 ├── mdns/          # Host-side mDNS aliases helper
+├── docs/          # Design/planning docs (e.g. llama-cpp router-mode spec)
 ├── .github/       # CI: Trivy workflow + Dependabot config
 ├── Makefile       # top-level LLM-engine control (up / down / list)
 ├── sparky.svg     # Project logo (AI self-portrait)
@@ -177,5 +180,6 @@ vLLM (`--gpu-memory-utilization 0.9`) and llama-cpp classic single-model mode (`
 - [`CHANGELOG.md`](CHANGELOG.md) — [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format, [SemVer](https://semver.org/spec/v2.0.0.html) versioning.
 - [`.github/workflows/trivy.yml`](.github/workflows/trivy.yml) — image CVE scans (HIGH+CRITICAL, fixed-only), IaC config scan, filesystem secret scan. Doc: [`.github/workflows/trivy.md`](.github/workflows/trivy.md).
 - [`.github/dependabot.yml`](.github/dependabot.yml) — weekly grouped PR to bump pinned GitHub Action SHAs.
+- [`docs/`](docs/) — design/planning docs for individual features (e.g. `docs/superpowers/specs/`, `docs/superpowers/plans/` for the llama-cpp router-mode work).
 - [`LICENSE`](LICENSE) — MIT.
 - [`sparky.svg`](sparky.svg) — project mascot. Drawn by the AI that helped build this repo, as a self-portrait.
