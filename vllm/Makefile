@@ -51,35 +51,74 @@ up:  ## Start with the given variant. Usage: make up ENV=<name>
 	$(COMPOSE) --env-file .env --env-file "envs/$(ENV).env" up -d
 
 hf-cache:  ## List HF repos already downloaded in this host's HF cache.
-	@ls -d $(HF_CACHE)/hub/models--* 2>/dev/null \
-	    | sed 's|.*/models--||; s|--|/|' | sort
+	@dupes=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|' | while read -r r; do [[ -z "$$r" ]] && continue; echo "$$r" | cut -d/ -f2 | tr 'A-Z' 'a-z'; done | sort | uniq -d); \
+	ls -d $(HF_CACHE)/hub/models--* 2>/dev/null \
+	    | sed 's|.*/models--||; s|--|/|' | sort \
+	    | while read -r repo; do \
+	        short=$$(echo "$$repo" | cut -d/ -f2 | tr 'A-Z' 'a-z'); \
+	        if echo "$$dupes" | grep -qFx "$$short"; then \
+	            echo "$$repo  [⚠ collision]"; \
+	        else \
+	            echo "$$repo"; \
+	        fi; \
+	    done
 
 hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak, orphan to .bak.
 	@cached=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|'); \
 	if [[ -z "$$cached" ]]; then echo "no models in $(HF_CACHE)/hub/"; exit 0; fi; \
 	cd envs; \
-	created=0; restored=0; orphaned=0; \
+	created=0; restored=0; renamed=0; orphaned=0; collisions=0; \
+	dupes=$$(echo "$$cached" | while read -r r; do [[ -z "$$r" ]] && continue; echo "$$r" | cut -d/ -f2 | tr 'A-Z' 'a-z'; done | sort | uniq -d); \
+	if [[ -n "$$dupes" ]]; then \
+	    while read -r d; do \
+	        [[ -z "$$d" ]] && continue; \
+	        echo "  collision: $$d shared by multiple orgs — every repo gets an org-qualified name"; \
+	        collisions=$$((collisions + 1)); \
+	    done <<<"$$dupes"; \
+	fi; \
 	while read -r repo; do \
 	    [[ -z "$$repo" ]] && continue; \
 	    short=$$(echo "$$repo" | cut -d/ -f2 | tr 'A-Z' 'a-z'); \
-	    file="$$short.env"; \
-	    if grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env 2>/dev/null | head -1 >/dev/null; then \
+	    if echo "$$dupes" | grep -qFx "$$short"; then \
+	        org=$$(echo "$$repo" | cut -d/ -f1 | tr 'A-Z' 'a-z'); \
+	        slug="$$org-$$short"; \
+	    else \
+	        slug="$$short"; \
+	    fi; \
+	    file="$$slug.env"; \
+	    existing=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env 2>/dev/null | head -1); \
+	    existing_bak=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env.bak 2>/dev/null | head -1); \
+	    if [[ -n "$$existing" && "$$existing" == "$$file" ]]; then \
 	        :; \
-	    elif [[ -f "$$file.bak" ]] && grep -qE "^VLLM_MODEL=$$repo[[:space:]]*\$$" "$$file.bak"; then \
-	        printf '↩ restore %s ← %s.bak\n' "$$file" "$$file"; \
-	        mv "$$file.bak" "$$file"; \
-	        restored=$$((restored + 1)); \
+	    elif [[ -n "$$existing" ]]; then \
+	        if [[ -f "$$file" ]]; then \
+	            echo "  rename blocked: $$file already exists — leaving $$existing as-is, resolve manually"; \
+	        else \
+	            printf '↺ rename  %s → %s (content already tracked; name now qualified)\n' "$$existing" "$$file"; \
+	            mv "$$existing" "$$file"; \
+	            sed -i.rntmp "s|^VLLM_SERVED_NAME=.*|VLLM_SERVED_NAME=$$slug|" "$$file"; rm -f "$$file.rntmp"; \
+	            renamed=$$((renamed + 1)); \
+	        fi; \
+	    elif [[ -n "$$existing_bak" ]]; then \
+	        if [[ -f "$$file" ]]; then \
+	            echo "  restore blocked: $$file already exists — leaving $$existing_bak as-is, resolve manually"; \
+	        else \
+	            printf '↩ restore %s ← %s (was archived under a different name)\n' "$$file" "$$existing_bak"; \
+	            mv "$$existing_bak" "$$file"; \
+	            sed -i.rntmp "s|^VLLM_SERVED_NAME=.*|VLLM_SERVED_NAME=$$slug|" "$$file"; rm -f "$$file.rntmp"; \
+	            restored=$$((restored + 1)); \
+	        fi; \
 	    elif [[ -f "$$file" ]]; then \
 	        echo "  name clash: $$file already exists but points elsewhere — leave alone, rename manually if needed"; \
 	    else \
 	        printf '+ create  %s — %s\n' "$$file" "$$repo"; \
 	        { \
-	            echo "# $$repo. Layered on top of ../.env by \`make up ENV=$$short\`."; \
+	            echo "# $$repo. Layered on top of ../.env by \`make up ENV=$$slug\`."; \
 	            echo "# Host-wide values (VLLM_TAG, HF_CACHE_HOST, HF_TOKEN, defaults)"; \
 	            echo "# live in ../.env."; \
 	            echo ""; \
 	            echo "VLLM_MODEL=$$repo"; \
-	            echo "VLLM_SERVED_NAME=$$short"; \
+	            echo "VLLM_SERVED_NAME=$$slug"; \
 	            echo ""; \
 	            echo "# Optional per-variant overrides — uncomment to use."; \
 	            echo "# VLLM_GPU_MEM=0.9"; \
@@ -98,4 +137,4 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	        orphaned=$$((orphaned + 1)); \
 	    fi; \
 	done; \
-	echo "summary — $$created created, $$restored restored, $$orphaned orphaned"
+	echo "summary — $$created created, $$restored restored, $$renamed renamed, $$orphaned orphaned, $$collisions collisions"
