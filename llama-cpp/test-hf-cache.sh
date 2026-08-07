@@ -25,6 +25,9 @@ mk_gguf() {
 mk_gguf vendorA Model-X-GGUF Model-X-Q4_K_M.gguf
 mk_gguf vendorB Model-X-GGUF Model-X-Q4_K_M.gguf
 mk_gguf vendorC Model-Y-GGUF Model-Y-Q8_0.gguf
+mk_gguf vendorA Model-Pro-GGUF Model-Pro-Q4.gguf
+mk_gguf vendorB Model-Pro-GGUF Model-Pro-Q4.gguf
+mk_gguf vendorA Model-Pro Model-Pro-unique.gguf
 
 HF_CACHE="$hf_cache" SYMLINK_FARM="$farm" CTX_DEFAULT=8192 NGL_DEFAULT=999 \
     PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
@@ -41,6 +44,15 @@ if ! echo "$out" | grep 'vendorB/Model-X-GGUF' | grep -q '⚠ collision'; then
 fi
 if echo "$out" | grep 'vendorC/Model-Y-GGUF' | grep -q '⚠ collision'; then
     echo "FAIL: vendorC/Model-Y-GGUF should NOT be flagged — it doesn't collide"; fail=1
+fi
+if ! echo "$out" | grep -F 'vendorA/Model-Pro-GGUF' | grep -q '⚠ collision'; then
+    echo "FAIL: vendorA/Model-Pro-GGUF should be flagged as a collision"; fail=1
+fi
+if ! echo "$out" | grep -F 'vendorB/Model-Pro-GGUF' | grep -q '⚠ collision'; then
+    echo "FAIL: vendorB/Model-Pro-GGUF should be flagged as a collision"; fail=1
+fi
+if echo "$out" | grep -F 'vendorA/Model-Pro ' | grep -q '⚠ collision'; then
+    echo "FAIL: vendorA/Model-Pro (prefix of a colliding repo's name, but NOT itself colliding) was falsely flagged — substring-match bug"; fail=1
 fi
 
 if [[ $fail -eq 0 ]]; then

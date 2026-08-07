@@ -71,7 +71,8 @@ hf-cache:  ## List cached models — GGUFs in llama-cpp-cache vol + every HF rep
 	        for fp in $$(find "$$d" -name "*.gguf" 2>/dev/null); do \
 	            if [[ -L "$$farm/$$(basename "$$fp")" ]]; then router_flag=" [router]"; break; fi; \
 	        done; \
-	        if [[ -f "$$farm/config.ini" ]] && grep -q "^#.*$$repo" "$$farm/config.ini"; then \
+	        if [[ -f "$$farm/config.ini" ]] && \
+	           awk '/^# COLLISIONS/,0' "$$farm/config.ini" | grep '^#   ' | sed 's/^#   [^:]*: //' | tr ',' '\n' | grep -qFx "$$repo"; then \
 	            collision_flag=" [⚠ collision]"; \
 	        fi; \
 	    fi; \
