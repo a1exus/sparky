@@ -138,6 +138,8 @@ When that happens, **every** repo sharing the name gets an org-qualified
 file instead: `envs/<org>-<repo>.env`, e.g. `envs/orgb-qwen3.6-27b.env`.
 `VLLM_SERVED_NAME` inside the file always matches its filename stem.
 
+When an existing plain-named file would collide, `hf-sync` automatically renames it to its org-qualified form. If the qualified destination already exists, the rename is blocked with `rename blocked: <file> already exists — leaving <old-name> as-is, resolve manually`, requiring manual resolution.
+
 This is a discoverability fix, not an availability one — `VLLM_MODEL=<org>/<repo>`
 is always the real, unique identity vLLM loads; the short filename is only
 a `make up ENV=<name>` convenience. `make hf-cache` flags affected repos
