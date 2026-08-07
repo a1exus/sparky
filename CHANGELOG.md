@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-07
+
 ### Added
 
 - `README.es.md`, `README.ru.md`, `README.zh.md`: full Spanish, Russian, and Simplified Chinese translations of the top-level README, each structurally identical to the English version (same headings, tables, code blocks — commands/paths/env vars left untranslated). All four README files now carry a language-switcher line under the logo linking to one another. Thanks to [@webbrain-one](https://github.com/webbrain-one) for proposing the idea in PR #21 (a separate `README.es-ES.md` PR, closed unmerged in favor of this version).
@@ -197,7 +199,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `.gitignore` excludes `.env`, `*.crt`, `*.key`, and `docker-compose.override.yml`.
 - All third-party GitHub Actions pinned by commit SHA.
 
-[Unreleased]: https://github.com/a1exus/sparky/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/a1exus/sparky/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/a1exus/sparky/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/a1exus/sparky/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/a1exus/sparky/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/a1exus/sparky/compare/v0.4.0...v0.5.0
