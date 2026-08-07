@@ -131,7 +131,7 @@ def main() -> int:
             continue
         model_value = existing.get(section, "model", fallback="")
         target = symlink_farm / Path(model_value).name if model_value else None
-        if target is not None and target.exists():
+        if target is not None and (target.is_symlink() or target.exists()):
             # Hand-added or previously-managed section whose GGUF is still
             # physically present — keep it, don't archive it.
             new_config[section] = dict(existing.items(section))

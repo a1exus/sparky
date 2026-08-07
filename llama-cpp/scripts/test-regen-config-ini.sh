@@ -12,8 +12,8 @@ trap 'rm -rf "$tmp"' EXIT
 
 farm="$tmp/farm"
 mkdir -p "$farm"
-touch "$farm/auto-model.gguf"
-touch "$farm/manual-model.gguf"
+ln -s /root/.cache/huggingface/hub/fake/auto-model.gguf "$farm/auto-model.gguf"
+ln -s /root/.cache/huggingface/hub/fake/manual-model.gguf "$farm/manual-model.gguf"
 # gone-model.gguf intentionally NOT created — simulates a removed GGUF.
 
 fail=0
