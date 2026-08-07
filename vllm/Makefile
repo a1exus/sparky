@@ -55,11 +55,10 @@ hf-cache:  ## List HF repos already downloaded in this host's HF cache.
 	    | sed 's|.*/models--||; s|--|/|' | sort
 
 hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak, orphan to .bak.
-	@set -e -o pipefail; \
-	cached=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|'); \
+	@cached=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|'); \
 	if [[ -z "$$cached" ]]; then echo "no models in $(HF_CACHE)/hub/"; exit 0; fi; \
 	cd envs; \
-	created=0; restored=0; orphaned=0; collisions=0; \
+	created=0; restored=0; renamed=0; orphaned=0; collisions=0; \
 	dupes=$$(echo "$$cached" | while read -r r; do [[ -z "$$r" ]] && continue; echo "$$r" | cut -d/ -f2 | tr 'A-Z' 'a-z'; done | sort | uniq -d); \
 	if [[ -n "$$dupes" ]]; then \
 	    while read -r d; do \
@@ -78,8 +77,14 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	        slug="$$short"; \
 	    fi; \
 	    file="$$slug.env"; \
-	    if grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env 2>/dev/null | head -1 >/dev/null; then \
+	    existing=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env 2>/dev/null | head -1); \
+	    if [[ -n "$$existing" && "$$existing" == "$$file" ]]; then \
 	        :; \
+	    elif [[ -n "$$existing" ]]; then \
+	        printf '↺ rename  %s → %s (content already tracked; name now qualified)\n' "$$existing" "$$file"; \
+	        mv "$$existing" "$$file"; \
+	        sed -i.rntmp "s|^VLLM_SERVED_NAME=.*|VLLM_SERVED_NAME=$$slug|" "$$file"; rm -f "$$file.rntmp"; \
+	        renamed=$$((renamed + 1)); \
 	    elif [[ -f "$$file.bak" ]] && grep -qE "^VLLM_MODEL=$$repo[[:space:]]*\$$" "$$file.bak"; then \
 	        printf '↩ restore %s ← %s.bak\n' "$$file" "$$file"; \
 	        mv "$$file.bak" "$$file"; \
@@ -113,4 +118,4 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	        orphaned=$$((orphaned + 1)); \
 	    fi; \
 	done; \
-	echo "summary — $$created created, $$restored restored, $$orphaned orphaned, $$collisions collisions"
+	echo "summary — $$created created, $$restored restored, $$renamed renamed, $$orphaned orphaned, $$collisions collisions"
