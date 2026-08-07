@@ -51,8 +51,17 @@ up:  ## Start with the given variant. Usage: make up ENV=<name>
 	$(COMPOSE) --env-file .env --env-file "envs/$(ENV).env" up -d
 
 hf-cache:  ## List HF repos already downloaded in this host's HF cache.
-	@ls -d $(HF_CACHE)/hub/models--* 2>/dev/null \
-	    | sed 's|.*/models--||; s|--|/|' | sort
+	@dupes=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|' | while read -r r; do [[ -z "$$r" ]] && continue; echo "$$r" | cut -d/ -f2 | tr 'A-Z' 'a-z'; done | sort | uniq -d); \
+	ls -d $(HF_CACHE)/hub/models--* 2>/dev/null \
+	    | sed 's|.*/models--||; s|--|/|' | sort \
+	    | while read -r repo; do \
+	        short=$$(echo "$$repo" | cut -d/ -f2 | tr 'A-Z' 'a-z'); \
+	        if echo "$$dupes" | grep -qFx "$$short"; then \
+	            echo "$$repo  [⚠ collision]"; \
+	        else \
+	            echo "$$repo"; \
+	        fi; \
+	    done
 
 hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak, orphan to .bak.
 	@cached=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|'); \

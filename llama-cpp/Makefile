@@ -66,13 +66,17 @@ hf-cache:  ## List cached models — GGUFs in llama-cpp-cache vol + every HF rep
 	    gg=$$(find "$$d" -name "*.gguf" 2>/dev/null | wc -l); \
 	    st=$$(find "$$d" -name "*.safetensors" 2>/dev/null | wc -l); \
 	    router_flag=""; \
+	    collision_flag=""; \
 	    if [[ $$gg -gt 0 && -d "$$farm" ]]; then \
 	        for fp in $$(find "$$d" -name "*.gguf" 2>/dev/null); do \
 	            if [[ -L "$$farm/$$(basename "$$fp")" ]]; then router_flag=" [router]"; break; fi; \
 	        done; \
+	        if [[ -f "$$farm/config.ini" ]] && grep -q "^#.*$$repo" "$$farm/config.ini"; then \
+	            collision_flag=" [⚠ collision]"; \
+	        fi; \
 	    fi; \
 	    if [[ $$gg -gt 0 ]]; then \
-	        printf "  %-60s [%d GGUF — llama-cpp can load]%s\n" "$$repo" "$$gg" "$$router_flag"; \
+	        printf "  %-60s [%d GGUF — llama-cpp can load]%s%s\n" "$$repo" "$$gg" "$$router_flag" "$$collision_flag"; \
 	    else \
 	        printf "  %-60s [%d safetensors — vllm only]\n" "$$repo" "$$st"; \
 	    fi; \
