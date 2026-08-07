@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `llama-cpp/scripts/sync-router.sh`, `vllm/Makefile` (`hf-sync`): collision-safe model naming — when two HF repos share a GGUF basename (llama-cpp) or repo name (vllm), every colliding entry now gets a deterministic qualified name (`<org>-<repo>--<basename>` / `<org>-<repo>.env`) instead of one silently winning and the other being dropped or left undiscoverable. Collisions are surfaced in a `# COLLISIONS` block in `config.ini` and via `⚠ collision` in `make hf-cache` (both engines), not just a one-off `hf-sync` stdout line.
 - `vllm/Makefile` `hf-sync`: automatically renames a stale plain-named `.env` file to its qualified form when a collision appears after it was already synced, restoring correctly from `.bak` even when the archived file's name no longer matches the current qualified name; guards against ever overwriting an unrelated file at the rename destination.
 - `llama-cpp/scripts/regen-config-ini.py`: hand-added `config.ini` sections now survive re-syncs as long as their GGUF is still present in the symlink farm.
+- `llama-cpp/README.md`: "Model naming and collisions" section now discloses two known adjacent gaps the collision-safe mechanism above doesn't cover — classic mode's separate `envs/*.env` generation (distinct from the router-mode symlink farm) still isn't collision-safe, and two different quantizations of the *same* repo that reduce to the same short alias can still silently share one `config.ini` section.
 
 ### Fixed
 

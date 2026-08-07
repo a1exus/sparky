@@ -1,6 +1,6 @@
 # Model identity collision fix — design
 
-**Status:** draft, pending implementation.
+**Status:** implemented ([PR #23](https://github.com/a1exus/sparky/pull/23)). Two details below drifted from this doc during implementation — see the inline notes at the qualified-name format and the vllm collision-reporting mechanism.
 **Date:** 2026-08-06.
 **Services:** `llama-cpp/`, `vllm/`.
 
@@ -39,7 +39,7 @@ Current collision handling (`seen_has` → skip, first-wins) is replaced:
 
 1. Enumerate GGUFs via the existing `list_ggufs` (unchanged — it already correctly finds nonstandard layouts like `dspark/`).
 2. Group by basename. For a group of size 1: symlink named exactly as today (`ln -sfn <container_path> $SYMLINK_FARM/<basename>`).
-3. For a group of size 2+: **every** member gets `ln -sfn <container_path> $SYMLINK_FARM/<org>--<repo-slug>--<basename>`, where `repo-slug` is the repo portion of the HF id, lowercased, `/` and spaces replaced with `-`. No first-wins branch; no `seen_has` skip.
+3. For a group of size 2+: **every** member gets `ln -sfn <container_path> $SYMLINK_FARM/<org>--<repo-slug>--<basename>`, where `repo-slug` is the repo portion of the HF id, lowercased, `/` and spaces replaced with `-`. No first-wins branch; no `seen_has` skip. *(Shipped as `<org>-<repo>--<basename>` — a single dash joining org and repo, double dash before the basename — since `repo_slug` already folds `org/repo` into one lowercased, `-`-joined token. Equivalent in effect; noted so this isn't mistaken for drift.)*
 4. Section-name derivation (today's quant-stripping regex) runs against the *qualified* name for collision members, against the plain basename otherwise. Collision-derived section names are uglier but unique and traceable back to `org/repo` by inspection.
 5. A `collisions` accumulator (parallel to today's `created`/`unchanged`/`orphaned` counters) records `<basename> → [repo1, repo2, ...]` for every group of size 2+.
 
@@ -57,7 +57,7 @@ Same grouping principle, applied inline (matching the target's existing style �
 - Group cached repos by `cut -d/ -f2 | lower` (today's `short`).
 - Group size 1: `envs/<short>.env` as today.
 - Group size 2+: **every** member gets `envs/<org>-<short>.env` (org included, lowercased, `/`→`-`). No "leave alone" branch for the second arrival — every repo in a collision group gets a working env file every run.
-- Collision list printed in the existing summary line and, new, appended as a comment block at the top of any `.env` file affected (cheap persistence without inventing a new side-channel for this smaller surface).
+- Collision list printed in the existing summary line and, new, appended as a comment block at the top of any `.env` file affected (cheap persistence without inventing a new side-channel for this smaller surface). *(Superseded — see note below.)*
 
 ### `make hf-cache` (both engines)
 
@@ -76,7 +76,7 @@ Annotate affected repo lines with `⚠ collision` (llama-cpp already annotates w
 
 - **Qualified names are ugly.** Accepted trade-off — correctness over prettiness for the rare collision case; hand-editable via the now-preserved manual-section path.
 - **`config.ini` growing a second managed block (`# COLLISIONS`) alongside the existing header.** Keep it mechanically simple (plain comment lines, no nested parsing) so it doesn't become a second source of truth `regen-config-ini.py` has to reconcile against.
-- **vllm's per-`.env`-file comment block drifts from `config.ini`'s single-block approach.** Acceptable asymmetry — the two engines' underlying mechanisms (symlink farm vs. plain env files) are different enough that forcing identical collision-reporting shapes now would fight Track B's upcoming unification rather than help it.
+- **vllm's per-`.env`-file comment block drifts from `config.ini`'s single-block approach.** Acceptable asymmetry — the two engines' underlying mechanisms (symlink farm vs. plain env files) are different enough that forcing identical collision-reporting shapes now would fight Track B's upcoming unification rather than help it. *(Superseded: the per-file comment block described above was never implemented. What shipped instead — discovered mid-implementation, not anticipated by this doc — is more capable: `hf-sync` reports collisions in its stdout summary as planned, but also automatically renames a stale plain-named `.env` file to its qualified form when a collision appears after it was already synced, restoring correctly from `.bak` even when the archived name no longer matches, with a guard against ever overwriting an unrelated file at the destination. See `vllm/README.md`'s "Model naming and collisions" section for the shipped behavior.)*
 
 ## Out of scope
 
