@@ -135,6 +135,34 @@ ls -L /opt/hf/.cache/llama-cpp-models/    # symlinks appear "broken" on the host
 docker exec llama-cpp ls -L /models/      # resolves fine in the container
 ```
 
+### Model naming and collisions
+
+`make hf-sync` names each symlink in the farm after its GGUF's bare filename
+(e.g. `Qwen3.6-27B-BF16-00001-of-00002.gguf`) — that's also where the short
+`config.ini` alias (`qwen3.6-27b`) comes from. Vendors sometimes reuse the
+same filename across different repos (e.g. a base model and its MTP/
+speculative-decoding sibling). When that happens, **every** repo sharing
+that filename gets a qualified name instead: `<org>-<repo>--<basename>`,
+e.g. `unsloth-qwen3.6-27b-mtp-gguf--Qwen3.6-27B-BF16-00001-of-00002.gguf`.
+This is deterministic — it doesn't depend on scan order, and a plain name
+never silently starts pointing at a different repo just because a new
+colliding sibling showed up later.
+
+Every collision is listed in a `# COLLISIONS` block at the top of
+`config.ini`, regenerated on every `hf-sync` run, and flagged with
+`⚠ collision` in `make hf-cache` output.
+
+If you want a nicer alias for a qualified name, hand-edit its section name
+in `config.ini` — `make hf-sync` only ever rewrites a section's `model =`
+line, and preserves any section (including a renamed one) as long as its
+GGUF is still in the farm.
+
+Note: llama.cpp's router also lists every standard-layout HF repo under its
+full `<org>/<repo>:<quant>` ID directly from the HF cache (`"source": "cache"`
+in `/v1/models`), independent of this symlink farm. That path is always
+collision-proof — it's the symlink farm's *short alias* layer this section
+is about.
+
 ### Limitations
 
 - **Safetensors-only HF repos are invisible.** The 4 such repos in this host's cache (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `Qwen/Qwen3.6-27B`, `Jackrong/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled`) are not loadable by llama.cpp. Pull a GGUF variant from HF (look for `<author>/<repo>-GGUF`) or convert with `convert_hf_to_gguf.py` to make them appear.

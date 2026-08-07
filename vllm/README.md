@@ -129,6 +129,20 @@ For larger models, use a quantized variant (e.g. `Qwen/Qwen2.5-72B-Instruct-AWQ`
 
 The bind-mount at `${HF_CACHE_HOST}` is the standard HuggingFace cache. Anything you've downloaded via `huggingface-cli` / `hf download` on the host is already there and vLLM will use it without re-downloading. The reverse is also true: models vLLM downloads land in that directory and are usable by the `hf` CLI or any other tool that reads `~/.cache/huggingface/`.
 
+### Model naming and collisions
+
+`make hf-sync` names each `envs/*.env` file after the HF repo's name with
+its org stripped (e.g. `qwen3.6-27b.env` for `unsloth/Qwen3.6-27B`). Two
+different orgs publishing a repo with the same name collide on that name.
+When that happens, **every** repo sharing the name gets an org-qualified
+file instead: `envs/<org>-<repo>.env`, e.g. `envs/orgb-qwen3.6-27b.env`.
+`VLLM_SERVED_NAME` inside the file always matches its filename stem.
+
+This is a discoverability fix, not an availability one — `VLLM_MODEL=<org>/<repo>`
+is always the real, unique identity vLLM loads; the short filename is only
+a `make up ENV=<name>` convenience. `make hf-cache` flags affected repos
+with `⚠ collision`.
+
 ## Upgrade
 
 Bump `VLLM_TAG` in the variant file (`envs/<name>.env`), then:
