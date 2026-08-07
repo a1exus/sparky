@@ -101,8 +101,64 @@ if ! echo "$out2" | grep -q '↺ rename'; then
     echo "FAIL: scenario 2 — hf-sync didn't report the rename"; fail=1
 fi
 
+# --- scenario 3: rename guard — destination file already exists (unrelated content) ---
+# Verify that rename doesn't clobber an existing file at the target name.
+s3="$tmp/scenario3"
+mkdir -p "$s3/envs"
+cp "$SCRIPT_DIR/Makefile" "$s3/Makefile"
+
+# Create the stale plain-named file (would normally get renamed)
+cat > "$s3/envs/shared-model.env" <<'ENVEOF'
+# orgA/Shared-Model. Layered on top of ../.env by `make up ENV=shared-model`.
+# Host-wide values (VLLM_TAG, HF_CACHE_HOST, HF_TOKEN, defaults)
+# live in ../.env.
+
+VLLM_MODEL=orgA/Shared-Model
+VLLM_SERVED_NAME=shared-model
+
+# Optional per-variant overrides — uncomment to use.
+# VLLM_GPU_MEM=0.9
+# VLLM_MAX_LEN=32768
+ENVEOF
+
+# Create an unrelated file at the target rename destination
+cat > "$s3/envs/orga-shared-model.env" <<'ENVEOF'
+# someUnrelatedOrg/SomeOtherRepo — unrelated existing file
+VLLM_MODEL=someUnrelatedOrg/SomeOtherRepo
+VLLM_SERVED_NAME=unrelated-model
+ENVEOF
+
+hf_cache3="$s3/hf-cache"
+mk_repo "$hf_cache3" orgA Shared-Model
+mk_repo "$hf_cache3" orgB Shared-Model
+
+out3=$(cd "$s3" && make hf-sync HF_CACHE="$hf_cache3")
+
+# Verify shared-model.env (source) still exists — rename was blocked
+if [[ ! -f "$s3/envs/shared-model.env" ]]; then
+    echo "FAIL: scenario 3 — shared-model.env should still exist (rename was blocked)"; fail=1
+fi
+
+# Verify orga-shared-model.env (target) not clobbered — either still exists or moved to .bak
+if [[ -f "$s3/envs/orga-shared-model.env" ]]; then
+    if ! grep -q '^VLLM_MODEL=someUnrelatedOrg/SomeOtherRepo$' "$s3/envs/orga-shared-model.env"; then
+        echo "FAIL: scenario 3 — orga-shared-model.env was modified (content should be unrelated)"; fail=1
+    fi
+elif [[ -f "$s3/envs/orga-shared-model.env.bak" ]]; then
+    if ! grep -q '^VLLM_MODEL=someUnrelatedOrg/SomeOtherRepo$' "$s3/envs/orga-shared-model.env.bak"; then
+        echo "FAIL: scenario 3 — orga-shared-model.env.bak has wrong content"; fail=1
+    fi
+else
+    echo "FAIL: scenario 3 — orga-shared-model.env was lost (neither exists nor .bak)"; fail=1
+fi
+
+# Verify the rename was blocked with a message
+if ! echo "$out3" | grep -q 'rename blocked:'; then
+    echo "FAIL: scenario 3 — hf-sync didn't report the rename block"; fail=1
+fi
+
 if [[ $fail -eq 0 ]]; then
-    echo "PASS: vllm hf-sync collision handling (clean-slate + incremental)"
+    echo "PASS: vllm hf-sync collision handling (clean-slate + incremental + rename guard)"
 else
     exit 1
 fi

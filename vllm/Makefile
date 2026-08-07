@@ -81,10 +81,14 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	    if [[ -n "$$existing" && "$$existing" == "$$file" ]]; then \
 	        :; \
 	    elif [[ -n "$$existing" ]]; then \
-	        printf '↺ rename  %s → %s (content already tracked; name now qualified)\n' "$$existing" "$$file"; \
-	        mv "$$existing" "$$file"; \
-	        sed -i.rntmp "s|^VLLM_SERVED_NAME=.*|VLLM_SERVED_NAME=$$slug|" "$$file"; rm -f "$$file.rntmp"; \
-	        renamed=$$((renamed + 1)); \
+	        if [[ -f "$$file" ]]; then \
+	            echo "  rename blocked: $$file already exists — leaving $$existing as-is, resolve manually"; \
+	        else \
+	            printf '↺ rename  %s → %s (content already tracked; name now qualified)\n' "$$existing" "$$file"; \
+	            mv "$$existing" "$$file"; \
+	            sed -i.rntmp "s|^VLLM_SERVED_NAME=.*|VLLM_SERVED_NAME=$$slug|" "$$file"; rm -f "$$file.rntmp"; \
+	            renamed=$$((renamed + 1)); \
+	        fi; \
 	    elif [[ -f "$$file.bak" ]] && grep -qE "^VLLM_MODEL=$$repo[[:space:]]*\$$" "$$file.bak"; then \
 	        printf '↩ restore %s ← %s.bak\n' "$$file" "$$file"; \
 	        mv "$$file.bak" "$$file"; \
