@@ -40,6 +40,10 @@ traefik/certs/
 # Claude Code local state
 .claude/
 
+# Superpowers subagent-driven-development scratch workspace (ledgers,
+# briefs, review packages) — not part of the shipped repo.
+.superpowers/
+
 # Vendor / host-shipped trees we don't manage in this repo
 containerd
 MicronTechnology
