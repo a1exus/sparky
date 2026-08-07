@@ -57,10 +57,10 @@ list_ggufs() {
 
 # Portable associative-array shim — bash 3.2 (macOS system bash) lacks
 # `declare -A`. The encoded variable name (`_seen_<mangled-key>`) uniquely
-# identifies each key. Reused below under three key namespaces
+# identifies each key. Reused below under four key namespaces
 # (`cnt:`, `repos:`, `reported:`, `link:`) — a plain get/set/has store is
 # enough for all of them; `cnt:`/`repos:` layer increment/append on top.
-_seen_encode() { printf '%s' "$1" | LC_ALL=C tr -cs 'A-Za-z0-9_' '_'; }
+_seen_encode() { printf '%s' "$1" | od -An -tx1 | tr -d ' \n'; }
 seen_set() { local k; k=$(_seen_encode "$1"); eval "_seen_${k}=\$2"; }
 seen_get() { local k; k=$(_seen_encode "$1"); eval "printf '%s' \"\${_seen_${k}:-}\""; }
 seen_has() { [[ -n "$(seen_get "$1")" ]]; }
@@ -83,12 +83,14 @@ done < <(list_ggufs)
 
 # Counting pass — every entry's basename count + repo list, computed before
 # any symlink decision is made, so naming never depends on scan order.
+if [[ ${#entries[@]} -gt 0 ]]; then
 for entry in "${entries[@]}"; do
     IFS=$'\t' read -r repo host_path <<<"$entry"
     base=$(basename "$host_path")
     cnt_incr "$base"
     repos_append "$base" "$repo"
 done
+fi
 
 collisions_file=$(mktemp)
 trap 'rm -f "$collisions_file"' EXIT
@@ -98,6 +100,7 @@ created=0
 unchanged=0
 collisions=0
 
+if [[ ${#entries[@]} -gt 0 ]]; then
 for entry in "${entries[@]}"; do
     IFS=$'\t' read -r repo host_path <<<"$entry"
     base=$(basename "$host_path")
@@ -145,6 +148,7 @@ for entry in "${entries[@]}"; do
         specs+="$section"$'\t'"/models/$link_name"$'\n'
     fi
 done
+fi
 
 orphaned=0
 shopt -s nullglob
