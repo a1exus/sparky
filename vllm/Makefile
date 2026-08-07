@@ -87,6 +87,7 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	    fi; \
 	    file="$$slug.env"; \
 	    existing=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env 2>/dev/null | head -1); \
+	    existing_bak=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env.bak 2>/dev/null | head -1); \
 	    if [[ -n "$$existing" && "$$existing" == "$$file" ]]; then \
 	        :; \
 	    elif [[ -n "$$existing" ]]; then \
@@ -98,10 +99,15 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	            sed -i.rntmp "s|^VLLM_SERVED_NAME=.*|VLLM_SERVED_NAME=$$slug|" "$$file"; rm -f "$$file.rntmp"; \
 	            renamed=$$((renamed + 1)); \
 	        fi; \
-	    elif [[ -f "$$file.bak" ]] && grep -qE "^VLLM_MODEL=$$repo[[:space:]]*\$$" "$$file.bak"; then \
-	        printf '↩ restore %s ← %s.bak\n' "$$file" "$$file"; \
-	        mv "$$file.bak" "$$file"; \
-	        restored=$$((restored + 1)); \
+	    elif [[ -n "$$existing_bak" ]]; then \
+	        if [[ -f "$$file" ]]; then \
+	            echo "  restore blocked: $$file already exists — leaving $$existing_bak as-is, resolve manually"; \
+	        else \
+	            printf '↩ restore %s ← %s (was archived under a different name)\n' "$$file" "$$existing_bak"; \
+	            mv "$$existing_bak" "$$file"; \
+	            sed -i.rntmp "s|^VLLM_SERVED_NAME=.*|VLLM_SERVED_NAME=$$slug|" "$$file"; rm -f "$$file.rntmp"; \
+	            restored=$$((restored + 1)); \
+	        fi; \
 	    elif [[ -f "$$file" ]]; then \
 	        echo "  name clash: $$file already exists but points elsewhere — leave alone, rename manually if needed"; \
 	    else \

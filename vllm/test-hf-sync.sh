@@ -157,8 +157,52 @@ if ! echo "$out3" | grep -q 'rename blocked:'; then
     echo "FAIL: scenario 3 — hf-sync didn't report the rename block"; fail=1
 fi
 
+# --- scenario 4: .bak restore path is collision-aware — a repo archived to
+# .bak under its old plain name (before any collision existed) must be
+# restored AND renamed when a collision exists at sync time, not silently
+# dropped in favor of a freshly-created default file. ---
+s4="$tmp/scenario4"
+mkdir -p "$s4/envs"
+cp "$SCRIPT_DIR/Makefile" "$s4/Makefile"
+cat > "$s4/envs/shared-model.env.bak" <<'ENVEOF'
+# orgA/Shared-Model. Layered on top of ../.env by `make up ENV=shared-model`.
+VLLM_MODEL=orgA/Shared-Model
+VLLM_SERVED_NAME=shared-model
+
+# Optional per-variant overrides — uncomment to use.
+VLLM_GPU_MEM=0.95
+ENVEOF
+
+hf_cache4="$s4/hf-cache"
+mk_repo "$hf_cache4" orgA Shared-Model
+mk_repo "$hf_cache4" orgB Shared-Model   # collision at sync time
+
+out4=$(cd "$s4" && make hf-sync HF_CACHE="$hf_cache4")
+
+if [[ -f "$s4/envs/shared-model.env.bak" ]]; then
+    echo "FAIL: scenario 4 — shared-model.env.bak should no longer exist (should have been restored)"; fail=1
+fi
+if [[ ! -f "$s4/envs/orga-shared-model.env" ]]; then
+    echo "FAIL: scenario 4 — orga-shared-model.env should exist (restored + renamed from .bak)"; fail=1
+fi
+if ! grep -q '^VLLM_MODEL=orgA/Shared-Model$' "$s4/envs/orga-shared-model.env" 2>/dev/null; then
+    echo "FAIL: scenario 4 — orga-shared-model.env has wrong/missing VLLM_MODEL"; fail=1
+fi
+if ! grep -q '^VLLM_SERVED_NAME=orga-shared-model$' "$s4/envs/orga-shared-model.env" 2>/dev/null; then
+    echo "FAIL: scenario 4 — orga-shared-model.env has a stale VLLM_SERVED_NAME"; fail=1
+fi
+if ! grep -q '^VLLM_GPU_MEM=0.95$' "$s4/envs/orga-shared-model.env" 2>/dev/null; then
+    echo "FAIL: scenario 4 — orga-shared-model.env lost the user's VLLM_GPU_MEM customization"; fail=1
+fi
+if [[ ! -f "$s4/envs/orgb-shared-model.env" ]]; then
+    echo "FAIL: scenario 4 — orgb-shared-model.env should have been created normally"; fail=1
+fi
+if ! echo "$out4" | grep -q '↩ restore'; then
+    echo "FAIL: scenario 4 — hf-sync didn't report the restore"; fail=1
+fi
+
 if [[ $fail -eq 0 ]]; then
-    echo "PASS: vllm hf-sync collision handling (clean-slate + incremental + rename guard)"
+    echo "PASS: vllm hf-sync collision handling (clean-slate + incremental + rename guard + .bak restore)"
 else
     exit 1
 fi
