@@ -163,6 +163,17 @@ in `/v1/models`), independent of this symlink farm. That path is always
 collision-proof — it's the symlink farm's *short alias* layer this section
 is about.
 
+Two known gaps this mechanism doesn't yet cover. First, classic mode's
+separate `envs/*.env` generation (the first pass of `make hf-sync`, distinct
+from the symlink farm covered above) doesn't have the same collision-safe
+qualified naming yet — a basename collision there can still silently drop
+the second entry; router mode is unaffected. Second, two different
+quantizations of the *same* repo that happen to reduce to the same short
+alias after quant-suffix stripping can still silently share one
+`config.ini` section — a different, narrower collision than the
+cross-vendor case this mechanism was built for, and not yet detected or
+surfaced.
+
 ### Limitations
 
 - **Safetensors-only HF repos are invisible.** The 4 such repos in this host's cache (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `Qwen/Qwen3.6-27B`, `Jackrong/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled`) are not loadable by llama.cpp. Pull a GGUF variant from HF (look for `<author>/<repo>-GGUF`) or convert with `convert_hf_to_gguf.py` to make them appear.

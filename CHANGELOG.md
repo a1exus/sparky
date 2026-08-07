@@ -10,11 +10,17 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Added
 
 - `README.es.md`, `README.ru.md`, `README.zh.md`: full Spanish, Russian, and Simplified Chinese translations of the top-level README, each structurally identical to the English version (same headings, tables, code blocks — commands/paths/env vars left untranslated). All four README files now carry a language-switcher line under the logo linking to one another. Thanks to [@webbrain-one](https://github.com/webbrain-one) for proposing the idea in PR #21 (a separate `README.es-ES.md` PR, closed unmerged in favor of this version).
+- `llama-cpp/scripts/sync-router.sh`, `vllm/Makefile` (`hf-sync`): collision-safe model naming — when two HF repos share a GGUF basename (llama-cpp) or repo name (vllm), every colliding entry now gets a deterministic qualified name (`<org>-<repo>--<basename>` / `<org>-<repo>.env`) instead of one silently winning and the other being dropped or left undiscoverable. Collisions are surfaced in a `# COLLISIONS` block in `config.ini` and via `⚠ collision` in `make hf-cache` (both engines), not just a one-off `hf-sync` stdout line.
+- `vllm/Makefile` `hf-sync`: automatically renames a stale plain-named `.env` file to its qualified form when a collision appears after it was already synced, restoring correctly from `.bak` even when the archived file's name no longer matches the current qualified name; guards against ever overwriting an unrelated file at the rename destination.
+- `llama-cpp/scripts/regen-config-ini.py`: hand-added `config.ini` sections now survive re-syncs as long as their GGUF is still present in the symlink farm.
 
 ### Fixed
 
 - Top-level `README.md` Topology section: corrected the claim that `netdata` joins the shared `traefik` Docker network alongside the other backends. It actually runs with `network_mode: host` (needed for host-level PID/proc telemetry) and has no endpoint on that network — Traefik reaches it via a static route to `host.docker.internal:19999` in `traefik/dynamic/services.yml`, not container-name DNS.
 - Top-level `README.md` Layout tree and Repo housekeeping section: added the previously-undocumented `docs/` directory (`docs/superpowers/specs/`, `docs/superpowers/plans/` — design/planning docs for the llama-cpp router-mode work).
+- `llama-cpp/Makefile` `hf-cache`: collision annotation no longer false-positives on a repo name that's a substring/prefix of another, unrelated repo's name.
+- `llama-cpp/scripts/sync-router.sh`: fixed a non-injective internal encoding (`.` and `-` both collapsed to the same character) that could cause two unrelated, non-colliding GGUFs to be spuriously treated as colliding and renamed.
+- `llama-cpp/scripts/sync-router.sh`: fixed a bash-3.2 (macOS system bash) crash when the HF cache is empty.
 
 ## [0.6.1] - 2026-07-15
 
