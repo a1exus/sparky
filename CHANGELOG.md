@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 ### Added
 
 - `llama-cpp/README.md` "Tuning per model": documents the DFlash/DSpark speculative-decoding pattern (e.g. `unsloth/DeepSeek-V4-Flash-*-GGUF`) — a separate draft-model file paired via `model-draft` + `spec-type = draft-dflash`, distinct from MTP's single-file bundled draft head. Notes that the vendor's top-level `dspark-*.gguf` is the draft only, not a standalone model; the real target lives in the repo's quantized `UD-*` folders.
+- `tailscale/README.md` "Per-backend VIP Services": new troubleshooting note for the Tailscale admin console flagging every VIP service as "needs configuration" at once — the node stopped advertising them (typically after the `tailscale` container restarts) even though the service definitions themselves persist; fix is re-running `make services-apply`.
 
 ### Fixed
 
