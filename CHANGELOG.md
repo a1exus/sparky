@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Fixed
+
+- `traefik/traefik.yml`: long-lived streaming responses (LLM token generation via `ollama`/`llama-cpp`/`vllm`) could get cut mid-stream after 90–180s. Traefik's stock defaults — `entryPoints.websecure.transport.respondingTimeouts.idleTimeout` (180s) and `serversTransport.forwardingTimeouts.idleConnTimeout` (90s) — were never overridden, so a response that went quiet between chunks for longer than that got dropped even though the backend was still generating. Both disabled (`0`, no timeout) globally in the static config; safe here since every routed service is internal/trusted, not public-facing.
+
 ## [0.7.0] - 2026-08-07
 
 ### Added
