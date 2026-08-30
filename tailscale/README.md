@@ -123,6 +123,18 @@ State lives in the `tailscale-state` docker volume — survives restarts. The li
 
 Once all six advertise, Traefik routing accepts both `<svc>.spark-1822.local` (LAN) and `<svc>.<tailnet>.ts.net` (tailnet) on every router — the rules were relaxed from `<svc>.spark{x:.+}` to `<svc>.{x:.+}` to match either form.
 
+### Troubleshooting: admin console shows "needs configuration"
+
+If the Tailscale admin console flags every VIP service as **needs configuration** at once, the node has stopped advertising them — usually because the `tailscale` container was restarted or recreated (e.g. during host troubleshooting) without re-running phase two. Confirm with `make services-status`: each service prints an empty `{}` instead of the `endpoints` block. Fix is just re-running phase two:
+
+```bash
+cd /opt/tailscale
+make services-apply
+make services-status   # confirm every service now shows real endpoints, not {}
+```
+
+The service *definitions* (created in the admin console, phase one) aren't lost — only the node's advertisement of them, which isn't automatically restored by `docker compose up`/`restart` the way the base node identity is. Re-running `services-apply` after any tailscale container restart is the safe default if you're not sure whether it dropped.
+
 ### Legacy `svc:spark`
 
 The first VIP service set up here was `svc:spark` — one service proxying everything to Traefik, with a special bare-host fallback on the Traefik dashboard router to catch the no-subdomain Host header. The per-backend setup above supersedes it: hit `traefik.<tailnet>.ts.net` for the dashboard instead.
