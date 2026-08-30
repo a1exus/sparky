@@ -86,8 +86,8 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	        slug="$$short"; \
 	    fi; \
 	    file="$$slug.env"; \
-	    existing=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env 2>/dev/null | head -1); \
-	    existing_bak=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env.bak 2>/dev/null | head -1); \
+	    existing=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env 2>/dev/null | head -1 || true); \
+	    existing_bak=$$(grep -lE "^VLLM_MODEL=$$repo[[:space:]]*\$$" *.env.bak 2>/dev/null | head -1 || true); \
 	    if [[ -n "$$existing" && "$$existing" == "$$file" ]]; then \
 	        :; \
 	    elif [[ -n "$$existing" ]]; then \
@@ -129,7 +129,7 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	done <<<"$$cached"; \
 	for f in *.env; do \
 	    [[ -f "$$f" ]] || continue; \
-	    repo=$$(grep -E '^VLLM_MODEL=' "$$f" | head -1 | cut -d= -f2-); \
+	    repo=$$(grep -E '^VLLM_MODEL=' "$$f" | head -1 | cut -d= -f2- || true); \
 	    [[ -z "$$repo" ]] && continue; \
 	    if ! grep -qFx "$$repo" <<<"$$cached"; then \
 	        printf '→ orphan  %s → %s.bak\n' "$$f" "$$f"; \

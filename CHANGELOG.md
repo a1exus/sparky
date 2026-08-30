@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- `llama-cpp/README.md` "Tuning per model": documents the DFlash/DSpark speculative-decoding pattern (e.g. `unsloth/DeepSeek-V4-Flash-*-GGUF`) — a separate draft-model file paired via `model-draft` + `spec-type = draft-dflash`, distinct from MTP's single-file bundled draft head. Notes that the vendor's top-level `dspark-*.gguf` is the draft only, not a standalone model; the real target lives in the repo's quantized `UD-*` folders.
+
 ### Fixed
 
 - `traefik/traefik.yml`: long-lived streaming responses (LLM token generation via `ollama`/`llama-cpp`/`vllm`) could get cut mid-stream after 90–180s. Traefik's stock defaults — `entryPoints.websecure.transport.respondingTimeouts.idleTimeout` (180s) and `serversTransport.forwardingTimeouts.idleConnTimeout` (90s) — were never overridden, so a response that went quiet between chunks for longer than that got dropped even though the backend was still generating. Both disabled (`0`, no timeout) globally in the static config; safe here since every routed service is internal/trusted, not public-facing.
+- `vllm/Makefile` (`hf-sync`, `hf-cache`) and `llama-cpp/Makefile` (`models`, `hf-sync`): five `existing=$(grep ... | head -1)`-style assignments would abort the whole recipe under `set -e -o pipefail` (`.SHELLFLAGS`) whenever `grep` found zero matches — the normal case for most repos/env files, not an error. Never caught locally because this Mac's system Make (3.81) silently ignores `.SHELLFLAGS`; broke for real on spark-1822's GNU Make 4.3, which honors it. Each assignment now ends in `|| true` so a "no match" doesn't abort the recipe.
 
 ## [0.7.0] - 2026-08-07
 
