@@ -21,6 +21,16 @@ entryPoints:
           permanent: true
   websecure:
     address: ":443"
+    # Default respondingTimeouts.idleTimeout is 180s (and readTimeout/
+    # writeTimeout default to 0/unbounded, so those are fine as-is).
+    # A long-lived streaming response (LLM token generation via ollama/
+    # llama-cpp/vllm) can go quiet between chunks for longer than that
+    # and gets cut mid-stream even though the backend is still working —
+    # disabled here since every service behind this entrypoint is
+    # internal/trusted, not public-facing.
+    transport:
+      respondingTimeouts:
+        idleTimeout: 0
 
   # Internal-only entrypoint for the /ping healthcheck. Bound to all
   # interfaces inside the container, but no host port published — only
@@ -35,6 +45,14 @@ api:
 
 ping:
   entryPoint: ping
+
+# Default serversTransport — applies to every service's connection to its
+# backend unless a service opts into a named override. idleConnTimeout
+# defaults to 90s; same streaming-cutoff reasoning as websecure's
+# respondingTimeouts above, so disabled here too.
+serversTransport:
+  forwardingTimeouts:
+    idleConnTimeout: 0
 
 providers:
   # Primary: discover labelled services on the docker socket. Services

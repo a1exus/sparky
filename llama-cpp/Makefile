@@ -84,7 +84,7 @@ hf-cache:  ## List cached models — GGUFs in llama-cpp-cache vol + every HF rep
 	done
 
 models:  ## Show /v1/models from the running container (router mode). Reads LLAMA_API_KEY from .env.
-	@key=$$(grep -E '^LLAMA_API_KEY=' .env 2>/dev/null | head -1 | cut -d= -f2-); \
+	@key=$$(grep -E '^LLAMA_API_KEY=' .env 2>/dev/null | head -1 | cut -d= -f2- || true); \
 	if [[ -n "$$key" ]]; then \
 	    auth_args=( -H "Authorization: Bearer $$key" ); \
 	else \
@@ -165,7 +165,7 @@ hf-sync:  ## Reconcile envs against this host's GGUF inventory: create new, rest
 	done; \
 	for f in *.env; do \
 	    [[ -f "$$f" ]] || continue; \
-	    p=$$(grep -E '^MODEL_PATH=' "$$f" | head -1 | cut -d= -f2-); \
+	    p=$$(grep -E '^MODEL_PATH=' "$$f" | head -1 | cut -d= -f2- || true); \
 	    [[ -z "$$p" ]] && continue; \
 	    case "$$p" in \
 	        /root/.cache/llama.cpp/*) \

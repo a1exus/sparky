@@ -126,6 +126,23 @@ parallel = 1                 # MTP requires single-slot worker (-np 1)
 
 Requires a llama.cpp build ≥ b9200 (MTP support landed upstream in commit `2555826`, PR #22673, 2026-05-16). Older `server-cuda` digests will fail to load the MTP GGUF with `missing tensor 'blk.<last>.ssm_conv1d.weight'`. Acceptance shows up in the logs as `draft acceptance = 1.000 (N accepted / N generated)` and a `draft-mtp` statistics line. The MTP flags only take effect on workers spawned from the matching `config.ini` section — auto-discovered HF-style aliases (`unsloth/...:BF16`) get no flags and silently fall back to non-speculative decoding.
 
+**DFlash / DSpark (e.g. `unsloth/DeepSeek-V4-Flash-*-GGUF`) is a different mechanism — don't confuse it with MTP above.** Where MTP's draft head is bundled inside the same GGUF, DFlash/DSpark ships the draft as a **separate, much smaller file** (llama.cpp's internal architecture name for it is `dflash`; vendors commonly name the file `dspark-*.gguf`). That file is *not* a standalone model — llama.cpp's own model code hard-requires a paired target-model context to read intermediate hidden states from, and refuses to load solo with `failed to initialize the context: dflash requires ctx_other to be set` regardless of any `--spec-type`/`--fit` flag combination. Concretely, for `unsloth/DeepSeek-V4-Flash-*-GGUF`: the top-level `dspark-*.gguf` / `dspark/` files are the draft only (~11GB); the real target model lives in the repo's quantized `UD-*` folders (e.g. `UD-Q4_K_XL/`, sharded, 80–160GB depending on quant) — download one of those, not just the top-level file, or you'll have nothing that can actually serve requests.
+
+Once both are downloaded and `hf-sync` has given each its own `config.ini` section, pair them by hand-adding `model-draft` alongside `spec-type = draft-dflash`:
+
+```ini
+[deepseek-v4-flash-0731-ud]
+model = /models/DeepSeek-V4-Flash-0731-UD-IQ2_XXS-00001-of-00003.gguf
+model-draft = /models/dspark-DeepSeek-V4-Flash-0731-BF16.gguf
+ctx-size = 8192
+n-gpu-layers = 999
+n-gpu-layers-draft = 999
+spec-type = draft-dflash
+parallel = 1
+```
+
+Size the target quant to fit host memory — llama.cpp shards multi-part GGUFs automatically from the first shard's filename, so only that one needs to appear in `model =`.
+
 ### Symlink farm
 
 `make hf-sync` builds `${SYMLINK_FARM_HOST}` (default `/opt/hf/.cache/llama-cpp-models/`) with one symlink per GGUF in the HF cache. Symlinks target **container-side absolute paths** (`/root/.cache/huggingface/hub/...`), so they only resolve **inside the container**:

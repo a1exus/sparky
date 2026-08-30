@@ -85,6 +85,10 @@ All hosts use the wildcard cert:
 
 Plain HTTP requests on `:80` are 308-redirected to HTTPS.
 
+### Long-lived streaming responses
+
+Traefik's stock timeout defaults are tuned for ordinary request/response traffic, not LLM token streaming: `entryPoints.websecure.transport.respondingTimeouts.idleTimeout` defaults to 180s, and `serversTransport.forwardingTimeouts.idleConnTimeout` defaults to 90s. Either one can cut a response mid-stream if generation goes quiet between chunks for longer than that — the backend (`ollama`/`llama-cpp`/`vllm`) is still working, but the client sees the connection die. Both are set to `0` (no timeout) in `traefik.yml`, globally, since every service behind this entrypoint is internal/trusted rather than public-facing. Don't "clean these back up" to defaults — they're the fix for a real, reproduced cutoff, not leftover config.
+
 ## Add an app
 
 For a container on the `traefik` Docker network, just add labels to its `docker-compose.yml` and let the docker provider pick it up:
