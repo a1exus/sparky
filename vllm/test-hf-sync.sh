@@ -53,7 +53,7 @@ fi
 if ! echo "$out" | grep -q 'collision:'; then
     echo "FAIL: scenario 1 — hf-sync didn't report the collision"; fail=1
 fi
-if ! echo "$out" | grep -qE '^summary — 3 created, 0 restored, 0 renamed, 0 orphaned, 1 collisions$'; then
+if ! echo "$out" | grep -qE '^summary — 3 created, 0 restored, 0 renamed, 0 updated, 0 orphaned, 1 collisions$'; then
     echo "FAIL: scenario 1 — unexpected summary line: $(echo "$out" | grep '^summary')"; fail=1
 fi
 
@@ -201,8 +201,89 @@ if ! echo "$out4" | grep -q '↩ restore'; then
     echo "FAIL: scenario 4 — hf-sync didn't report the restore"; fail=1
 fi
 
+# --- scenario 5: non-chat detection — a cached repo whose config.json
+# architecture is in NON_CHAT_ARCHS (Whisper) gets VLLM_TOOL_PARSER= on
+# create AND on an existing env file; chat models (even ones without a chat
+# template, like MTP drafters) and repos without config.json are left alone;
+# a second run is a no-op; a user-set value is respected. ---
+s5="$tmp/scenario5"
+mkdir -p "$s5/envs"
+cp "$SCRIPT_DIR/Makefile" "$s5/Makefile"
+hf_cache5="$s5/hf-cache"
+mk_snap() {
+    # mk_snap <root> <org> <repo> <architecture|->
+    local d="$1/hub/models--$2--$3/snapshots/abc123"
+    mkdir -p "$d"
+    [[ "$4" != "-" ]] && printf '{\n  "architectures": [\n    "%s"\n  ]\n}\n' "$4" > "$d/config.json"
+    return 0
+}
+mk_snap "$hf_cache5" openai Whisper-New   WhisperForConditionalGeneration
+mk_snap "$hf_cache5" openai Whisper-Old   WhisperForConditionalGeneration
+mk_snap "$hf_cache5" openai Whisper-Mine  WhisperForConditionalGeneration
+mk_snap "$hf_cache5" Qwen   Chat-Model    Qwen3ForCausalLM
+mk_snap "$hf_cache5" google Gemma-Drafter Gemma4AssistantForCausalLM
+mk_snap "$hf_cache5" orgX   No-Config     -
+# Pre-existing env written by an older hf-sync (no VLLM_TOOL_PARSER line).
+printf 'VLLM_MODEL=openai/Whisper-Old\nVLLM_SERVED_NAME=whisper-old\n' > "$s5/envs/whisper-old.env"
+# Pre-existing env where the user chose a parser explicitly.
+printf 'VLLM_MODEL=openai/Whisper-Mine\nVLLM_SERVED_NAME=whisper-mine\nVLLM_TOOL_PARSER=hermes\n' > "$s5/envs/whisper-mine.env"
+
+out5=$(cd "$s5" && make hf-sync HF_CACHE="$hf_cache5")
+
+for f in whisper-new whisper-old; do
+    if [[ $(grep -c '^VLLM_TOOL_PARSER=$' "$s5/envs/$f.env" 2>/dev/null) != 1 ]]; then
+        echo "FAIL: scenario 5 — $f.env should carry exactly one active 'VLLM_TOOL_PARSER='"; fail=1
+    fi
+done
+if [[ $(grep -c '^VLLM_TOOL_PARSER=' "$s5/envs/whisper-mine.env") != 1 ]] \
+   || ! grep -q '^VLLM_TOOL_PARSER=hermes$' "$s5/envs/whisper-mine.env"; then
+    echo "FAIL: scenario 5 — whisper-mine.env's user-set VLLM_TOOL_PARSER must be left alone"; fail=1
+fi
+for f in chat-model gemma-drafter no-config; do
+    if grep -q '^VLLM_TOOL_PARSER=' "$s5/envs/$f.env" 2>/dev/null; then
+        echo "FAIL: scenario 5 — $f.env must not get an active VLLM_TOOL_PARSER"; fail=1
+    fi
+done
+if ! echo "$out5" | grep -qE '^summary — 4 created, 0 restored, 0 renamed, 2 updated, 0 orphaned, 0 collisions$'; then
+    echo "FAIL: scenario 5 — unexpected summary line: $(echo "$out5" | grep '^summary')"; fail=1
+fi
+out5b=$(cd "$s5" && make hf-sync HF_CACHE="$hf_cache5")
+if ! echo "$out5b" | grep -qE '^summary — 0 created, 0 restored, 0 renamed, 0 updated, 0 orphaned, 0 collisions$'; then
+    echo "FAIL: scenario 5 — second run should be a no-op: $(echo "$out5b" | grep '^summary')"; fail=1
+fi
+
+# --- scenario 6: env-sync drops retired defaults from .env, keeps everything
+# else (including a customized VLLM_MAX_LEN), and is a no-op on re-run. ---
+s6="$tmp/scenario6"
+mkdir -p "$s6"
+cp "$SCRIPT_DIR/Makefile" "$s6/Makefile"
+printf 'VLLM_TAG=latest\nVLLM_GPU_MEM=0.9\nVLLM_MAX_LEN=32768\nVLLM_MODEL=placeholder\n' > "$s6/.env"
+
+out6=$(cd "$s6" && make env-sync)
+
+if grep -q '^VLLM_MAX_LEN=' "$s6/.env"; then
+    echo "FAIL: scenario 6 — retired VLLM_MAX_LEN=32768 should be removed from .env"; fail=1
+fi
+if [[ $(grep -c . "$s6/.env") != 3 ]] || ! grep -q '^VLLM_TAG=latest$' "$s6/.env"; then
+    echo "FAIL: scenario 6 — env-sync must keep every other line of .env"; fail=1
+fi
+if ! grep -q '^VLLM_MAX_LEN=32768$' "$s6/.env.bak" 2>/dev/null; then
+    echo "FAIL: scenario 6 — env-sync should leave the original in .env.bak"; fail=1
+fi
+if ! echo "$out6" | grep -q 'removed retired default VLLM_MAX_LEN=32768'; then
+    echo "FAIL: scenario 6 — env-sync didn't report the removal"; fail=1
+fi
+if [[ -n "$(cd "$s6" && make env-sync)" ]]; then
+    echo "FAIL: scenario 6 — second env-sync should print nothing"; fail=1
+fi
+printf 'VLLM_MAX_LEN=65536\n' > "$s6/.env"
+(cd "$s6" && make env-sync >/dev/null)
+if ! grep -q '^VLLM_MAX_LEN=65536$' "$s6/.env"; then
+    echo "FAIL: scenario 6 — a customized VLLM_MAX_LEN must be left alone"; fail=1
+fi
+
 if [[ $fail -eq 0 ]]; then
-    echo "PASS: vllm hf-sync collision handling (clean-slate + incremental + rename guard + .bak restore)"
+    echo "PASS: vllm hf-sync (collisions + incremental + rename guard + .bak restore + non-chat update) and env-sync"
 else
     exit 1
 fi
