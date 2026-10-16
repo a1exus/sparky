@@ -17,7 +17,7 @@ docker-compose.override.yml
 # The Makefile and README in envs/ stay committed; the .env files don't.
 **/envs/*.env
 
-# Local backups (e.g. `make hf-sync` moves an env to .env.bak when the
+# Local backups (e.g. `make sync` moves an env to .env.bak when the
 # model leaves the remote HF cache; a future sync restores from .bak if
 # it returns). Also catches *.bak from manual edits anywhere in the tree.
 *.bak

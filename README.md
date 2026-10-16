@@ -164,6 +164,7 @@ make up engine=vllm ENV=<variant>    # start one engine
 make up engine=llama-cpp             # llama-cpp with empty ENV = router mode
 make down engine=ollama              # stop just that one; the rest keep running
 make list                            # model variants for vllm / llama-cpp
+make sync                            # after `hf download` or `git pull`: sync vllm + llama-cpp
 ```
 
 Engines are `vllm`, `llama-cpp`, `ollama`, `open-webui`. `up engine=vllm|llama-cpp` delegates to that stack's own `make up` (so `ENV=` variant-layering still applies); `ollama`/`open-webui` go through the shared open-webui compose project. For what's running use `docker ps -a`; for what's actually on the GPU use `nvidia-smi`.

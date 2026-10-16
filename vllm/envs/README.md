@@ -2,7 +2,7 @@
 
 One **self-contained** file per model. `make up ENV=<name>` invokes `docker compose --env-file envs/<name>.env up -d` so the chosen variant's values reach the running container. Raw `docker compose ps / logs / down` afterwards reads the parent dir's `.env` (auto-bootstrapped by `make up` from `.env.example`) — placeholder values that satisfy compose's required-var checks but never reach a real container.
 
-Each variant here corresponds to a model **already downloaded** on this host (under `/opt/hf/.cache/huggingface/`). Adding a new variant means first `hf download <repo>` (or letting vLLM pull on first start), then dropping a new `<name>.env` here — or run `make hf-sync` from the parent dir to do it automatically based on what's in the HF cache.
+Each variant here corresponds to a model **already downloaded** on this host (under `/opt/hf/.cache/huggingface/`). Adding a new variant means first `hf download <repo>` (or letting vLLM pull on first start), then dropping a new `<name>.env` here — or run `make sync` from the parent dir to do it automatically based on what's in the HF cache.
 
 ## Current variants
 
@@ -27,7 +27,7 @@ Gated models need `HF_TOKEN` — set it once in the parent `.env`; every variant
 
 ```bash
 # from /opt/vllm:
-make list                                  # show available variants
+make list                                  # variants + the HF repo each serves
 make up ENV=qwen3.5-27b-reasoning          # docker compose --env-file envs/<name>.env up -d
 docker compose logs -f vllm                # tail (reads .env placeholder, fine for logs)
 docker compose down
@@ -35,20 +35,23 @@ docker compose down
 
 ## Maintenance
 
-Maintenance lives in the parent `Makefile` (`../Makefile`). It is **read-only against the cache** and **never downloads** anything itself — use `hf download <repo>` to populate the cache, then `make hf-sync` to materialize an env file.
+Maintenance lives in the parent `Makefile` (`../Makefile`). It is **read-only against the cache** and **never downloads** anything itself — use `hf download <repo>` to populate the cache, then `make sync` to materialize an env file.
 
 ```bash
-make hf-cache   # HF repos already downloaded in the host's HF cache
-make hf-sync    # reconcile envs/ against the cache:
-                #   + create envs for newly cached models
-                #   ↩ restore <name>.env from <name>.env.bak when a model returns
-                #   ~ update: add VLLM_TOOL_PARSER= for non-chat models (NON_CHAT_ARCHS)
-                #   → move <name>.env to <name>.env.bak when the model leaves
-make env-sync   # drop retired shipped defaults from ../.env (backup: ../.env.bak);
-                # also runs as part of `make up` and `make hf-sync`
+make list      # variants + their HF repo; flags ⚠ collision, cached repos not
+               #   synced yet, and envs whose repo is no longer cached
+make sync      # reconcile envs/ (and ../.env) against the cache:
+               #   + create envs for newly cached models
+               #   ↩ restore <name>.env from <name>.env.bak when a model returns
+               #   ~ update: add VLLM_TOOL_PARSER= for non-chat models (NON_CHAT_ARCHS)
+               #   → move <name>.env to <name>.env.bak when the model leaves
+               #   - drop retired shipped defaults from ../.env (backup: ../.env.bak);
+               #     `make up` runs this cleanup too
 ```
 
-`*.env.bak` is gitignored — host-local artifact of the sync's orphaning path. A subsequent `make hf-sync` will restore the file if the corresponding model reappears in the cache, preserving any hand edits you'd made.
+The old names `make hf-cache` / `make hf-sync` / `make env-sync` still work but print a rename note; they'll be removed in a future release.
+
+`*.env.bak` is gitignored — host-local artifact of the sync's orphaning path. A subsequent `make sync` will restore the file if the corresponding model reappears in the cache, preserving any hand edits you'd made.
 
 ## See also
 

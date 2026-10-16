@@ -2,7 +2,7 @@
 # llama-server launcher. Two modes:
 #
 #   Router mode (DEFAULT when no MODEL_* env var is set):
-#     Serves every GGUF under /models (symlink farm populated by `make hf-sync`).
+#     Serves every GGUF under /models (symlink farm populated by `make sync`).
 #     Per-model overrides live in /models/config.ini.
 #
 #   Classic single-model mode (one of these picks the model):
@@ -82,7 +82,7 @@ else
     fi
     gguf_count=$(find /models -maxdepth 1 -name '*.gguf' 2>/dev/null | wc -l)
     if [[ "${gguf_count}" -eq 0 ]]; then
-        echo "router mode warning: /models has no *.gguf entries — run \`make hf-sync\` on the host" >&2
+        echo "router mode warning: /models has no *.gguf entries — run \`make sync\` on the host" >&2
     fi
     args+=(
         --models-dir /models

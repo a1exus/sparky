@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Standalone test for `make hf-cache`'s collision annotation. No framework —
+# Standalone test for `make list`'s collision annotation (and the deprecated
+# `make hf-cache` alias). No framework —
 # builds a scratch HF cache + farm with a real collision, runs sync-router.sh
-# to populate config.ini's COLLISIONS block, then runs `make hf-cache` and
+# to populate config.ini's COLLISIONS block, then runs `make list` and
 # asserts the output flags the right repos. Uses a bogus docker volume name
-# so the (Docker-dependent) volume-listing half of hf-cache contributes
+# so the (Docker-dependent) volume-listing half of `list` contributes
 # nothing — this test needs no Docker. Run directly:
-#   ./test-hf-cache.sh
+#   ./test-list.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,7 +34,7 @@ HF_CACHE="$hf_cache" SYMLINK_FARM="$farm" CTX_DEFAULT=8192 NGL_DEFAULT=999 \
     PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
     "$SCRIPT_DIR/scripts/sync-router.sh" >/dev/null 2>&1
 
-out=$(make -C "$SCRIPT_DIR" hf-cache HF_CACHE="$hf_cache" SYMLINK_FARM_HOST="$farm" LLAMACPP_CACHE_VOL=test-vol-that-does-not-exist-xyz 2>/dev/null)
+out=$(make -C "$SCRIPT_DIR" list HF_CACHE="$hf_cache" SYMLINK_FARM_HOST="$farm" LLAMACPP_CACHE_VOL=test-vol-that-does-not-exist-xyz 2>/dev/null)
 
 fail=0
 if ! echo "$out" | grep 'vendorA/Model-X-GGUF' | grep -q '⚠ collision'; then
@@ -55,8 +56,16 @@ if echo "$out" | grep -F 'vendorA/Model-Pro ' | grep -q '⚠ collision'; then
     echo "FAIL: vendorA/Model-Pro (prefix of a colliding repo's name, but NOT itself colliding) was falsely flagged — substring-match bug"; fail=1
 fi
 
+if ! echo "$out" | grep -q '^# classic-mode variants'; then
+    echo "FAIL: list should start with the classic-mode variants section"; fail=1
+fi
+alias_out=$(make -C "$SCRIPT_DIR" hf-cache HF_CACHE="$hf_cache" SYMLINK_FARM_HOST="$farm" LLAMACPP_CACHE_VOL=test-vol-that-does-not-exist-xyz 2>/dev/null)
+if [[ "$alias_out" != "$out" ]]; then
+    echo "FAIL: deprecated \`make hf-cache\` should print the same as \`make list\`"; fail=1
+fi
+
 if [[ $fail -eq 0 ]]; then
-    echo "PASS: llama-cpp hf-cache collision annotation"
+    echo "PASS: llama-cpp list collision annotation + hf-cache alias"
 else
     exit 1
 fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the symlink farm for llama.cpp router mode, then regenerate config.ini.
-# Idempotent. Called by `make hf-sync` (which exports the env vars below).
+# Idempotent. Called by `make sync` (which exports the env vars below).
 #
 # Env (with defaults):
 #   HF_CACHE        host HuggingFace cache dir (default /opt/hf/.cache/huggingface)

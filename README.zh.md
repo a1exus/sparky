@@ -164,6 +164,7 @@ make up engine=vllm ENV=<variant>    # 启动一个引擎
 make up engine=llama-cpp             # ENV 留空的 llama-cpp = router 模式
 make down engine=ollama              # 只停止这一个；其余保持运行
 make list                            # 列出 vllm / llama-cpp 的模型变体
+make sync                            # `hf download` 或 `git pull` 之后：同步 vllm + llama-cpp
 ```
 
 引擎包括 `vllm`、`llama-cpp`、`ollama`、`open-webui`。`up engine=vllm|llama-cpp` 会委托给该 stack 自己的 `make up`（因此 `ENV=` 的变体分层依然生效）；`ollama`/`open-webui` 则通过共享的 open-webui compose 项目处理。查看正在运行的容器用 `docker ps -a`；查看真正占用 GPU 的进程用 `nvidia-smi`。
