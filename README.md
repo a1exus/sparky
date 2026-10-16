@@ -64,7 +64,7 @@ Each stack has its own `README.md` — start there for deploy / configure / upgr
 | [`traefik/`](traefik/) | HTTPS reverse proxy, docker-label-driven, mints its own internal CA | publishes `:80`/`:443` |
 | [`cloudflare/`](cloudflare/) | Cloudflare Tunnel connector — outbound-only public ingress | configurable per-hostname in the CF dashboard |
 | [`tailscale/`](tailscale/) | Tailscale sidecar — tailnet-only ingress over WireGuard, optional Serve overlay fronts `traefik` | `https://spark-1822.<tailnet>.ts.net` |
-| [`vllm/`](vllm/) | vLLM inference server (HF safetensors), tool-calling enabled (`qwen3_xml`) | `https://vllm.spark-1822.local` |
+| [`vllm/`](vllm/) | vLLM inference server (HF safetensors), tool-calling (`qwen3_xml` by default, set per variant) | `https://vllm.spark-1822.local` |
 | [`llama-cpp/`](llama-cpp/) | llama.cpp GPU-accelerated inference server (GGUF). Router mode (default) serves every GGUF in the HF cache on demand; classic single-model mode also supported. OpenAI-compatible API + web UI | `https://llama.spark-1822.local` |
 | [`open-webui/`](open-webui/) | Open WebUI + Ollama (GPU on Ollama only) | `https://open-webui.spark-1822.local`, `https://ollama.spark-1822.local` |
 | [`netdata/`](netdata/) | Real-time host + container telemetry | `https://netdata.spark-1822.local` |

@@ -64,7 +64,7 @@ TLS 证书来自三个不同的根：Traefik 自签发内部 CA（客户端只�
 | [`traefik/`](traefik/) | HTTPS 反向代理，由 docker 标签驱动，自签发内部 CA | 发布 `:80`/`:443` |
 | [`cloudflare/`](cloudflare/) | Cloudflare Tunnel 连接器 —— 仅出站的公网入口 | 在 CF 控制台中按主机名配置 |
 | [`tailscale/`](tailscale/) | Tailscale sidecar —— 基于 WireGuard 的 tailnet 专属入口，可选的 Serve overlay 前置 `traefik` | `https://spark-1822.<tailnet>.ts.net` |
-| [`vllm/`](vllm/) | vLLM 推理服务器（HF safetensors），已启用工具调用（`qwen3_xml`） | `https://vllm.spark-1822.local` |
+| [`vllm/`](vllm/) | vLLM 推理服务器（HF safetensors），支持工具调用（默认 `qwen3_xml`，可按变体配置） | `https://vllm.spark-1822.local` |
 | [`llama-cpp/`](llama-cpp/) | GPU 加速的 llama.cpp 推理服务器（GGUF）。router 模式（默认）按需提供 HF 缓存中的任意 GGUF；同时支持经典单模型模式。兼容 OpenAI 的 API + Web 界面 | `https://llama.spark-1822.local` |
 | [`open-webui/`](open-webui/) | Open WebUI + Ollama（仅 Ollama 使用 GPU） | `https://open-webui.spark-1822.local`、`https://ollama.spark-1822.local` |
 | [`netdata/`](netdata/) | 主机 + 容器的实时遥测数据 | `https://netdata.spark-1822.local` |

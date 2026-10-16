@@ -64,7 +64,7 @@ TLS происходит из трёх разных корней: Traefik вып
 | [`traefik/`](traefik/) | HTTPS реверс-прокси, управляется метками Docker, выпускает собственный внутренний CA | публикует `:80`/`:443` |
 | [`cloudflare/`](cloudflare/) | Коннектор Cloudflare Tunnel — публичный вход только через исходящее соединение | настраивается по хостнейму в панели CF |
 | [`tailscale/`](tailscale/) | Сайдкар Tailscale — вход только через tailnet поверх WireGuard, опциональный оверлей Serve перед `traefik` | `https://spark-1822.<tailnet>.ts.net` |
-| [`vllm/`](vllm/) | Сервер инференса vLLM (safetensors от HF), с поддержкой вызова инструментов (`qwen3_xml`) | `https://vllm.spark-1822.local` |
+| [`vllm/`](vllm/) | Сервер инференса vLLM (safetensors от HF), с поддержкой вызова инструментов (`qwen3_xml` по умолчанию, настраивается для каждого варианта) | `https://vllm.spark-1822.local` |
 | [`llama-cpp/`](llama-cpp/) | Сервер инференса llama.cpp с ускорением GPU (GGUF). Режим router (по умолчанию) отдаёт по запросу любой GGUF из кэша HF; также поддерживается классический режим с одной моделью. API, совместимый с OpenAI, + веб-интерфейс | `https://llama.spark-1822.local` |
 | [`open-webui/`](open-webui/) | Open WebUI + Ollama (GPU только у Ollama) | `https://open-webui.spark-1822.local`, `https://ollama.spark-1822.local` |
 | [`netdata/`](netdata/) | Телеметрия хоста и контейнеров в реальном времени | `https://netdata.spark-1822.local` |
