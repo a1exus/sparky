@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-15
+
 ### Added
 
 - `llama-cpp/README.md` "Tuning per model": documents the DFlash/DSpark speculative-decoding pattern (e.g. `unsloth/DeepSeek-V4-Flash-*-GGUF`) — a separate draft-model file paired via `model-draft` + `spec-type = draft-dflash`, distinct from MTP's single-file bundled draft head. Notes that the vendor's top-level `dspark-*.gguf` is the draft only, not a standalone model; the real target lives in the repo's quantized `UD-*` folders.
@@ -20,7 +22,6 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `vllm/Makefile`: `make sync` and `make up` now drop retired shipped defaults from the host's `.env`. Deletes exact matches of retired shipped defaults (`RETIRED_DEFAULTS`: `VLLM_MAX_LEN=32768`, `VLLM_MAX_LEN=8192`) from the host's `.env`, keeping a copy in `.env.bak`; customized values don't match and stay. Needed because `.env` is bootstrapped once from `.env.example` and is gitignored, so `git pull` never updates it — the old `VLLM_MAX_LEN=32768` kept reaching every variant after the switch above.
 - `vllm/Makefile` `make sync`: writes `VLLM_TOOL_PARSER=` (tool-calling off) into env files — new and existing — for models whose `config.json` architecture is in `NON_CHAT_ARCHS` (currently `WhisperForConditionalGeneration`). Never overrides an existing active `VLLM_TOOL_PARSER=` line. Reported as `~ update`; the summary line gains an `updated` count. Detection is by explicit architecture list rather than "no chat template" — the latter misfires on e.g. Gemma 4 MTP drafters (`google/gemma-4-*-it-assistant`), which ship no chat template. Both behaviors covered by new scenarios in `vllm/test-sync.sh` (passes under macOS Make 3.81 and GNU Make 4.3).
 - **Host migration**: none by hand — after `git pull`, `make sync` (from `/opt` for both stacks, or inside `vllm/`) cleans `.env` and updates non-chat env files; `make up ENV=<name>` does the `.env` part too. To keep a long-context model capped below its native window, set `VLLM_MAX_LEN=<n>` in its `envs/<name>.env`.
-
 - **Make targets renamed to `list` + `sync`** in `vllm/` and `llama-cpp/`, so both stacks share one two-verb interface: `make list` shows what you can run, `make sync` reconciles everything against the HF cache.
   - `make list` absorbs `make hf-cache`. vllm: one line per variant with the HF repo it serves, plus `⚠ collision`, `not synced — run make sync` (cached repo with no env yet) and `not cached` (env whose repo left the cache) flags. llama-cpp: the classic-mode variants section first, then the former `hf-cache` output (volume GGUFs; HF repos flagged GGUF / vllm-only / `[router]` / `⚠ collision`).
   - `make sync` absorbs `make hf-sync` (and, in vllm, the short-lived `env-sync` — the retired-defaults `.env` cleanup is now an internal step of `sync` and `up`). llama-cpp's `sync` still regenerates the router symlink farm + `config.ini`.
@@ -229,7 +230,8 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - `.gitignore` excludes `.env`, `*.crt`, `*.key`, and `docker-compose.override.yml`.
 - All third-party GitHub Actions pinned by commit SHA.
 
-[Unreleased]: https://github.com/a1exus/sparky/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/a1exus/sparky/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/a1exus/sparky/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/a1exus/sparky/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/a1exus/sparky/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/a1exus/sparky/compare/v0.5.0...v0.6.0
