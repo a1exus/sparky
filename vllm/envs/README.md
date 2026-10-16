@@ -42,7 +42,10 @@ make hf-cache   # HF repos already downloaded in the host's HF cache
 make hf-sync    # reconcile envs/ against the cache:
                 #   + create envs for newly cached models
                 #   ↩ restore <name>.env from <name>.env.bak when a model returns
+                #   ~ update: add VLLM_TOOL_PARSER= for non-chat models (NON_CHAT_ARCHS)
                 #   → move <name>.env to <name>.env.bak when the model leaves
+make env-sync   # drop retired shipped defaults from ../.env (backup: ../.env.bak);
+                # also runs as part of `make up` and `make hf-sync`
 ```
 
 `*.env.bak` is gitignored — host-local artifact of the sync's orphaning path. A subsequent `make hf-sync` will restore the file if the corresponding model reappears in the cache, preserving any hand edits you'd made.
