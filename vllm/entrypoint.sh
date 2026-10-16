@@ -28,23 +28,35 @@ args=(
     --host                   "${LISTEN_HOST:-0.0.0.0}"
     --port                   "${LISTEN_PORT:-8000}"
     --gpu-memory-utilization "${VLLM_GPU_MEM:-0.9}"
-    --max-model-len          "${VLLM_MAX_LEN:-32768}"
-    # Tool-calling: `qwen3_xml` parses the XML tool-call format that
-    # Qwen3.x emits: <tool_call><function=NAME><parameter=PARAM>VAL
-    # </parameter></function></tool_call>. The other Qwen parser,
-    # `qwen3_coder`, is for a different (JSON-style) format. For non-
-    # Qwen families the parser is a no-op (chat completions still
-    # work). Switch to per-variant control if we ever serve multiple
-    # families with active tool calls at the same time.
-    --enable-auto-tool-choice
-    --tool-call-parser       qwen3_xml
 )
+
+# Context length: only passed when VLLM_MAX_LEN is set. Unset → vLLM
+# derives it from the model's config.json (max_position_embeddings,
+# max_target_positions, …), which is always valid for that model. A
+# hard-coded default can't be: 32768 is fine for chat LLMs but vLLM
+# refuses to start e.g. Whisper (448). Set it per variant to cap the
+# KV-cache footprint of long-context models.
+if [[ -n "${VLLM_MAX_LEN:-}" ]]; then
+    args+=(--max-model-len "${VLLM_MAX_LEN}")
+fi
+
+# Tool-calling: VLLM_TOOL_PARSER names vLLM's --tool-call-parser.
+# docker-compose.yml defaults it to `qwen3_xml`, which parses the XML
+# tool-call format Qwen3.x emits: <tool_call><function=NAME>
+# <parameter=PARAM>VAL</parameter></function></tool_call>. (The other
+# Qwen parser, `qwen3_coder`, is for a different JSON-style format.)
+# Set another parser per variant for other families, or set it empty
+# (`VLLM_TOOL_PARSER=`) for models with no chat/tool API at all — e.g.
+# speech-to-text like Whisper.
+if [[ -n "${VLLM_TOOL_PARSER:-}" ]]; then
+    args+=(--enable-auto-tool-choice --tool-call-parser "${VLLM_TOOL_PARSER}")
+fi
 
 # vLLM's env scanner warns on any unrecognized var with the VLLM_ prefix
 # (which it owns). Our launcher reads VLLM_MODEL / VLLM_SERVED_NAME /
-# VLLM_GPU_MEM / VLLM_MAX_LEN purely to build the argv — drop them from
-# the env before exec so vLLM's own scan stays quiet.
-unset VLLM_MODEL VLLM_SERVED_NAME VLLM_GPU_MEM VLLM_MAX_LEN
+# VLLM_GPU_MEM / VLLM_MAX_LEN / VLLM_TOOL_PARSER purely to build the
+# argv — drop them from the env before exec so vLLM's own scan stays quiet.
+unset VLLM_MODEL VLLM_SERVED_NAME VLLM_GPU_MEM VLLM_MAX_LEN VLLM_TOOL_PARSER
 
 echo "launching: vllm serve ${args[*]}"
 exec vllm serve "${args[@]}"

@@ -9,6 +9,7 @@ Smoke-tested on GB10 (compute capability 12.1) with `Qwen/Qwen3.6-27B` at `--max
 ## Supported model formats
 
 - **HuggingFace transformers format.** vLLM loads `safetensors` (preferred) and PyTorch `.bin` directly by repo ID. All 4 models cached on this host (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `Qwen/Qwen3.6-27B`, `Jackrong/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled`) are this format.
+- **Non-chat models** (e.g. speech-to-text `openai/whisper-large-v3-turbo`, served on `/v1/audio/transcriptions`) load the same way, but set `VLLM_TOOL_PARSER=` (empty) in their variant file — there is no chat/tool API to parse. Their context length comes from `config.json` as long as `VLLM_MAX_LEN` is unset (Whisper: 448); see [Configure](#configure).
 - **Not supported as direct inputs:** GGUF (use [`llama-cpp/`](../llama-cpp/) for those), ONNX, custom TensorRT engines.
 - **Quantization formats supported on Hopper/Blackwell-class GPUs:** AWQ, GPTQ, FP8, INT4, BitsAndBytes, and a few more. Full hardware/format compatibility chart: <https://docs.vllm.ai/en/latest/quantization/supported_hardware.html>.
 - **Supported architectures** (model families like Llama, Qwen, Mistral, GPT-OSS, DeepSeek, Phi, Gemma, …) are listed here: <https://docs.vllm.ai/en/latest/models/supported_models.html>.
@@ -63,8 +64,13 @@ vllm/
 
 Two layers:
 
-- **`.env`** (host-wide) — shared across every variant. `VLLM_TAG` (image pin), `HF_CACHE_HOST`, `HF_TOKEN`, default `VLLM_GPU_MEM` / `VLLM_MAX_LEN`. Bootstrapped from `.env.example` by `make up` on first run; gitignored thereafter.
+- **`.env`** (host-wide) — shared across every variant. `VLLM_TAG` (image pin), `HF_CACHE_HOST`, `HF_TOKEN`, default `VLLM_GPU_MEM`. Bootstrapped from `.env.example` by `make up` on first run; gitignored thereafter.
 - **`envs/<name>.env`** (per-variant) — just the model selection: `VLLM_MODEL`, `VLLM_SERVED_NAME`, and any per-variant overrides (e.g. `VLLM_MAX_LEN=65536` for one model). A few lines.
+
+Two model-shape knobs are deliberately **not** host-wide defaults, because no single value fits every model:
+
+- `VLLM_MAX_LEN` — unset by default, so `--max-model-len` is omitted and vLLM derives the context length from the model's `config.json`. Set it per variant to cap a long-context model's KV-cache footprint. (A host-wide 32768 makes vLLM refuse to start models with a shorter native limit, e.g. Whisper's 448.)
+- `VLLM_TOOL_PARSER` — `--tool-call-parser`, default `qwen3_xml` (via `docker-compose.yml`). Set another parser per variant for other families, or `VLLM_TOOL_PARSER=` (empty) to drop `--enable-auto-tool-choice --tool-call-parser` entirely for models with no chat API, e.g. speech-to-text.
 
 `make up ENV=<name>` chains both via `docker compose --env-file .env --env-file envs/<name>.env up -d` — variant wins where it specifies a value, falls back to `.env` otherwise. Edit `HF_TOKEN` once in `.env` and every variant picks it up; no token-duplication across variant files.
 
@@ -104,6 +110,13 @@ curl -k https://vllm.spark-1822.local/v1/chat/completions \
     -d '{"model":"qwen3.5-27b-reasoning","messages":[{"role":"user","content":"hello"}]}'
 ```
 
+Speech-to-text variants (Whisper) take an audio upload instead:
+
+```bash
+curl -k https://vllm.spark-1822.local/v1/audio/transcriptions \
+    -F file=@sample.wav -F model=whisper-large-v3-turbo
+```
+
 ## Adding a new variant
 
 vLLM works best with HF transformers-format models (safetensors). It does **not** load GGUF files like llama.cpp does — for GGUF, use the [`llama-cpp/`](../llama-cpp/) stack.
@@ -120,7 +133,16 @@ Then drop a new file at `envs/<name>.env`:
 VLLM_MODEL=<org>/<repo>
 VLLM_SERVED_NAME=<friendly-name>
 VLLM_GPU_MEM=0.9
-VLLM_MAX_LEN=8192
+# VLLM_MAX_LEN=65536   # optional cap; unset → model's native context
+```
+
+Non-chat models need their own shape — e.g. `openai/whisper-large-v3-turbo` (served on `/v1/audio/transcriptions`):
+
+```
+VLLM_MODEL=openai/whisper-large-v3-turbo
+VLLM_SERVED_NAME=whisper-large-v3-turbo
+VLLM_GPU_MEM=0.1
+VLLM_TOOL_PARSER=
 ```
 
 For larger models, use a quantized variant (e.g. `Qwen/Qwen2.5-72B-Instruct-AWQ`) — vLLM supports AWQ, GPTQ, FP8, BitsAndBytes, and a few others. See <https://docs.vllm.ai/en/latest/quantization/supported_hardware.html>.
@@ -153,6 +175,14 @@ Bump `VLLM_TAG` in the variant file (`envs/<name>.env`), then:
 docker compose --env-file envs/<name>.env pull   # resolve image tag from the variant
 make up ENV=<name>                                # restart on the new image
 ```
+
+### Migrating to model-derived context length
+
+Hosts set up before `VLLM_MAX_LEN` became optional still carry `VLLM_MAX_LEN=32768` in their local `.env` (it's gitignored, so `git pull` doesn't touch it). That value keeps applying to every variant until removed. To switch over:
+
+1. Add `VLLM_MAX_LEN=<n>` to the `envs/<name>.env` of each long-context model you want to stay capped (otherwise it reserves KV cache for its full native window).
+2. `sed -i '/^VLLM_MAX_LEN=32768/d' /opt/vllm/.env`
+3. `make up ENV=<name>` — the `launching:` line in `docker compose logs vllm` shows whether `--max-model-len` was passed.
 
 ## Logs
 

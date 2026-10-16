@@ -18,9 +18,10 @@ Each variant here corresponds to a model **already downloaded** on this host (un
 - `VLLM_MODEL` — HuggingFace repo ID (vLLM resolves via the standard HF Hub cache).
 - `VLLM_SERVED_NAME` — name surfaced via the OpenAI-compatible API.
 - `VLLM_GPU_MEM` — fraction of VRAM vLLM may use (0.0–1.0).
-- `VLLM_MAX_LEN` — max context length.
+- `VLLM_MAX_LEN` — max context length (optional; unset → vLLM derives it from the model's `config.json`).
+- `VLLM_TOOL_PARSER` — vLLM `--tool-call-parser` (optional; default `qwen3_xml`, empty disables tool-calling).
 
-Gated models need `HF_TOKEN` set in the variant file (`envs/<name>.env`).
+Gated models need `HF_TOKEN` — set it once in the parent `.env`; every variant inherits it.
 
 ## Picking a variant
 
