@@ -164,6 +164,7 @@ make up engine=vllm ENV=<вариант>    # запустить один дви
 make up engine=llama-cpp             # llama-cpp с пустым ENV = режим router
 make down engine=ollama              # остановить только его; остальные продолжают работать
 make list                            # варианты моделей для vllm / llama-cpp
+make sync                            # после `hf download` или `git pull`: синхронизировать vllm + llama-cpp
 ```
 
 Движки: `vllm`, `llama-cpp`, `ollama`, `open-webui`. `up engine=vllm|llama-cpp` делегирует собственному `make up` этого стека (так что слои вариантов `ENV=` по-прежнему применяются); `ollama`/`open-webui` идут через общий compose-проект open-webui. Чтобы узнать, что запущено, используйте `docker ps -a`; чтобы узнать, что реально на GPU — `nvidia-smi`.

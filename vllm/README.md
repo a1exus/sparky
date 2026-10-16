@@ -9,7 +9,7 @@ Smoke-tested on GB10 (compute capability 12.1) with `Qwen/Qwen3.6-27B` at `--max
 ## Supported model formats
 
 - **HuggingFace transformers format.** vLLM loads `safetensors` (preferred) and PyTorch `.bin` directly by repo ID. All 4 models cached on this host (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `Qwen/Qwen3.6-27B`, `Jackrong/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled`) are this format.
-- **Non-chat models** (e.g. speech-to-text `openai/whisper-large-v3-turbo`, served on `/v1/audio/transcriptions`) load the same way, with `VLLM_TOOL_PARSER=` (empty) in their variant file — there is no chat/tool API to parse. `make hf-sync` writes that line itself for architectures listed in the Makefile's `NON_CHAT_ARCHS` (currently `WhisperForConditionalGeneration`), on new and existing env files. Their context length comes from `config.json` as long as `VLLM_MAX_LEN` is unset (Whisper: 448); see [Configure](#configure).
+- **Non-chat models** (e.g. speech-to-text `openai/whisper-large-v3-turbo`, served on `/v1/audio/transcriptions`) load the same way, with `VLLM_TOOL_PARSER=` (empty) in their variant file — there is no chat/tool API to parse. `make sync` writes that line itself for architectures listed in the Makefile's `NON_CHAT_ARCHS` (currently `WhisperForConditionalGeneration`), on new and existing env files. Their context length comes from `config.json` as long as `VLLM_MAX_LEN` is unset (Whisper: 448); see [Configure](#configure).
 - **Not supported as direct inputs:** GGUF (use [`llama-cpp/`](../llama-cpp/) for those), ONNX, custom TensorRT engines.
 - **Quantization formats supported on Hopper/Blackwell-class GPUs:** AWQ, GPTQ, FP8, INT4, BitsAndBytes, and a few more. Full hardware/format compatibility chart: <https://docs.vllm.ai/en/latest/quantization/supported_hardware.html>.
 - **Supported architectures** (model families like Llama, Qwen, Mistral, GPT-OSS, DeepSeek, Phi, Gemma, …) are listed here: <https://docs.vllm.ai/en/latest/models/supported_models.html>.
@@ -49,7 +49,7 @@ cd /opt/vllm && make up ENV=<name>
 vllm/
 ├── docker-compose.yml
 ├── entrypoint.sh        # builds `vllm serve` argv from env; hosts the tool-call parser choice
-├── Makefile             # make list / make up ENV=<name> / make hf-cache / make hf-sync / make env-sync
+├── Makefile             # make list / make sync / make up ENV=<name>
 ├── envs/                # one .env per model variant
 │   ├── README.md
 │   ├── gpt-oss-120b.env
@@ -89,7 +89,7 @@ The `VLLM_MODEL=placeholder` in `.env.example` is a sentinel — it exists only 
 Prereq: `traefik/` running on `:80`/`:443`. The shared `traefik` Docker network must exist (owned by `traefik/`).
 
 ```bash
-make list                                # show available variants
+make list                                # variants + the HF repo each serves
 make up ENV=qwen3.5-27b-reasoning        # start that one
 docker logs -f vllm                      # tail (first run downloads the model)
 ```
@@ -136,7 +136,7 @@ VLLM_GPU_MEM=0.9
 # VLLM_MAX_LEN=65536   # optional cap; unset → model's native context
 ```
 
-Non-chat models need their own shape — e.g. `openai/whisper-large-v3-turbo` (served on `/v1/audio/transcriptions`). `make hf-sync` produces the `VLLM_TOOL_PARSER=` line automatically for Whisper; `VLLM_GPU_MEM` is optional (vLLM otherwise reserves 90% of memory for a 1.6 GB model):
+Non-chat models need their own shape — e.g. `openai/whisper-large-v3-turbo` (served on `/v1/audio/transcriptions`). `make sync` produces the `VLLM_TOOL_PARSER=` line automatically for Whisper; `VLLM_GPU_MEM` is optional (vLLM otherwise reserves 90% of memory for a 1.6 GB model):
 
 ```
 VLLM_MODEL=openai/whisper-large-v3-turbo
@@ -153,18 +153,18 @@ The bind-mount at `${HF_CACHE_HOST}` is the standard HuggingFace cache. Anything
 
 ### Model naming and collisions
 
-`make hf-sync` names each `envs/*.env` file after the HF repo's name with
+`make sync` names each `envs/*.env` file after the HF repo's name with
 its org stripped (e.g. `qwen3.6-27b.env` for `unsloth/Qwen3.6-27B`). Two
 different orgs publishing a repo with the same name collide on that name.
 When that happens, **every** repo sharing the name gets an org-qualified
 file instead: `envs/<org>-<repo>.env`, e.g. `envs/orgb-qwen3.6-27b.env`.
 `VLLM_SERVED_NAME` inside the file always matches its filename stem.
 
-When an existing plain-named file would collide, `hf-sync` automatically renames it to its org-qualified form. If the qualified destination already exists, the rename is blocked with `rename blocked: <file> already exists — leaving <old-name> as-is, resolve manually`, requiring manual resolution.
+When an existing plain-named file would collide, `make sync` automatically renames it to its org-qualified form. If the qualified destination already exists, the rename is blocked with `rename blocked: <file> already exists — leaving <old-name> as-is, resolve manually`, requiring manual resolution.
 
 This is a discoverability fix, not an availability one — `VLLM_MODEL=<org>/<repo>`
 is always the real, unique identity vLLM loads; the short filename is only
-a `make up ENV=<name>` convenience. `make hf-cache` flags affected repos
+a `make up ENV=<name>` convenience. `make list` flags affected repos
 with `⚠ collision`.
 
 ## Upgrade
@@ -178,15 +178,15 @@ make up ENV=<name>                                # restart on the new image
 
 ### Migrating to model-derived context length
 
-Hosts set up before `VLLM_MAX_LEN` became optional still carry `VLLM_MAX_LEN=32768` in their local `.env` (bootstrapped once from an older `.env.example`; gitignored, so `git pull` doesn't touch it). `make env-sync` removes it — and runs automatically as part of `make up` and `make hf-sync`, so after `git pull` nothing extra is needed:
+Hosts set up before `VLLM_MAX_LEN` became optional still carry `VLLM_MAX_LEN=32768` in their local `.env` (bootstrapped once from an older `.env.example`; gitignored, so `git pull` doesn't touch it). `make sync` removes it (so does `make up`, which runs the same cleanup first), so after `git pull` nothing extra is needed:
 
 ```bash
-make hf-sync                  # - env .env: removed retired default VLLM_MAX_LEN=32768 (backup: .env.bak)
+make sync                     # - env .env: removed retired default VLLM_MAX_LEN=32768 (backup: .env.bak)
                               # ~ update whisper-large-v3-turbo.env — non-chat model: VLLM_TOOL_PARSER=
 make up ENV=<name>
 ```
 
-`env-sync` only deletes exact matches of the old shipped defaults (`RETIRED_DEFAULTS` in the Makefile: `VLLM_MAX_LEN=32768`, `VLLM_MAX_LEN=8192`); a value you customized stays. Long-context models then get their full native window (more KV cache) — set `VLLM_MAX_LEN=<n>` in their `envs/<name>.env` to cap one. The `launching:` line in `docker compose logs vllm` shows whether `--max-model-len` was passed.
+The cleanup only deletes exact matches of the old shipped defaults (`RETIRED_DEFAULTS` in the Makefile: `VLLM_MAX_LEN=32768`, `VLLM_MAX_LEN=8192`); a value you customized stays. Long-context models then get their full native window (more KV cache) — set `VLLM_MAX_LEN=<n>` in their `envs/<name>.env` to cap one. The `launching:` line in `docker compose logs vllm` shows whether `--max-model-len` was passed.
 
 ## Logs
 

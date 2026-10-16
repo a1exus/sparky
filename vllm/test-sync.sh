@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Standalone test for `make hf-sync`'s collision handling. No framework —
+# Standalone test for `make sync` (collision handling, non-chat update,
+# retired .env defaults) and the deprecated `hf-sync` / `env-sync` aliases. No framework —
 # copies the Makefile into scratch dirs (the real envs/ is never touched).
 # Run directly:
-#   ./test-hf-sync.sh
+#   ./test-sync.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +28,7 @@ mk_repo "$hf_cache" orgA Shared-Model      # collision: same repo-name, differen
 mk_repo "$hf_cache" orgB Shared-Model
 mk_repo "$hf_cache" orgC Unique-Model      # no collision
 
-out=$(cd "$s1" && make hf-sync HF_CACHE="$hf_cache")
+out=$(cd "$s1" && make sync HF_CACHE="$hf_cache")
 
 if [[ ! -f "$s1/envs/unique-model.env" ]]; then
     echo "FAIL: scenario 1 — orgC/Unique-Model should keep its plain env filename"; fail=1
@@ -51,7 +52,7 @@ if ! grep -q '^VLLM_SERVED_NAME=orga-shared-model$' "$s1/envs/orga-shared-model.
     echo "FAIL: scenario 1 — orga-shared-model.env has the wrong VLLM_SERVED_NAME"; fail=1
 fi
 if ! echo "$out" | grep -q 'collision:'; then
-    echo "FAIL: scenario 1 — hf-sync didn't report the collision"; fail=1
+    echo "FAIL: scenario 1 — sync didn't report the collision"; fail=1
 fi
 if ! echo "$out" | grep -qE '^summary — 3 created, 0 restored, 0 renamed, 0 updated, 0 orphaned, 1 collisions$'; then
     echo "FAIL: scenario 1 — unexpected summary line: $(echo "$out" | grep '^summary')"; fail=1
@@ -80,7 +81,7 @@ hf_cache2="$s2/hf-cache"
 mk_repo "$hf_cache2" orgA Shared-Model
 mk_repo "$hf_cache2" orgB Shared-Model   # collision introduced after orgA was already synced
 
-out2=$(cd "$s2" && make hf-sync HF_CACHE="$hf_cache2")
+out2=$(cd "$s2" && make sync HF_CACHE="$hf_cache2")
 
 if [[ -f "$s2/envs/shared-model.env" ]]; then
     echo "FAIL: scenario 2 — shared-model.env (orgA's stale plain name) should have been renamed away"; fail=1
@@ -98,7 +99,7 @@ if ! grep -q '^VLLM_SERVED_NAME=orga-shared-model$' "$s2/envs/orga-shared-model.
     echo "FAIL: scenario 2 — orga-shared-model.env has a stale VLLM_SERVED_NAME"; fail=1
 fi
 if ! echo "$out2" | grep -q '↺ rename'; then
-    echo "FAIL: scenario 2 — hf-sync didn't report the rename"; fail=1
+    echo "FAIL: scenario 2 — sync didn't report the rename"; fail=1
 fi
 
 # --- scenario 3: rename guard — destination file already exists (unrelated content) ---
@@ -132,7 +133,7 @@ hf_cache3="$s3/hf-cache"
 mk_repo "$hf_cache3" orgA Shared-Model
 mk_repo "$hf_cache3" orgB Shared-Model
 
-out3=$(cd "$s3" && make hf-sync HF_CACHE="$hf_cache3")
+out3=$(cd "$s3" && make sync HF_CACHE="$hf_cache3")
 
 # Verify shared-model.env (source) still exists — rename was blocked
 if [[ ! -f "$s3/envs/shared-model.env" ]]; then
@@ -154,7 +155,7 @@ fi
 
 # Verify the rename was blocked with a message
 if ! echo "$out3" | grep -q 'rename blocked:'; then
-    echo "FAIL: scenario 3 — hf-sync didn't report the rename block"; fail=1
+    echo "FAIL: scenario 3 — sync didn't report the rename block"; fail=1
 fi
 
 # --- scenario 4: .bak restore path is collision-aware — a repo archived to
@@ -177,7 +178,7 @@ hf_cache4="$s4/hf-cache"
 mk_repo "$hf_cache4" orgA Shared-Model
 mk_repo "$hf_cache4" orgB Shared-Model   # collision at sync time
 
-out4=$(cd "$s4" && make hf-sync HF_CACHE="$hf_cache4")
+out4=$(cd "$s4" && make sync HF_CACHE="$hf_cache4")
 
 if [[ -f "$s4/envs/shared-model.env.bak" ]]; then
     echo "FAIL: scenario 4 — shared-model.env.bak should no longer exist (should have been restored)"; fail=1
@@ -198,7 +199,7 @@ if [[ ! -f "$s4/envs/orgb-shared-model.env" ]]; then
     echo "FAIL: scenario 4 — orgb-shared-model.env should have been created normally"; fail=1
 fi
 if ! echo "$out4" | grep -q '↩ restore'; then
-    echo "FAIL: scenario 4 — hf-sync didn't report the restore"; fail=1
+    echo "FAIL: scenario 4 — sync didn't report the restore"; fail=1
 fi
 
 # --- scenario 5: non-chat detection — a cached repo whose config.json
@@ -228,7 +229,7 @@ printf 'VLLM_MODEL=openai/Whisper-Old\nVLLM_SERVED_NAME=whisper-old\n' > "$s5/en
 # Pre-existing env where the user chose a parser explicitly.
 printf 'VLLM_MODEL=openai/Whisper-Mine\nVLLM_SERVED_NAME=whisper-mine\nVLLM_TOOL_PARSER=hermes\n' > "$s5/envs/whisper-mine.env"
 
-out5=$(cd "$s5" && make hf-sync HF_CACHE="$hf_cache5")
+out5=$(cd "$s5" && make sync HF_CACHE="$hf_cache5")
 
 for f in whisper-new whisper-old; do
     if [[ $(grep -c '^VLLM_TOOL_PARSER=$' "$s5/envs/$f.env" 2>/dev/null) != 1 ]]; then
@@ -247,43 +248,60 @@ done
 if ! echo "$out5" | grep -qE '^summary — 4 created, 0 restored, 0 renamed, 2 updated, 0 orphaned, 0 collisions$'; then
     echo "FAIL: scenario 5 — unexpected summary line: $(echo "$out5" | grep '^summary')"; fail=1
 fi
-out5b=$(cd "$s5" && make hf-sync HF_CACHE="$hf_cache5")
+out5b=$(cd "$s5" && make sync HF_CACHE="$hf_cache5")
 if ! echo "$out5b" | grep -qE '^summary — 0 created, 0 restored, 0 renamed, 0 updated, 0 orphaned, 0 collisions$'; then
     echo "FAIL: scenario 5 — second run should be a no-op: $(echo "$out5b" | grep '^summary')"; fail=1
 fi
 
-# --- scenario 6: env-sync drops retired defaults from .env, keeps everything
+# --- scenario 6: sync drops retired defaults from .env, keeps everything
 # else (including a customized VLLM_MAX_LEN), and is a no-op on re-run. ---
 s6="$tmp/scenario6"
 mkdir -p "$s6"
 cp "$SCRIPT_DIR/Makefile" "$s6/Makefile"
 printf 'VLLM_TAG=latest\nVLLM_GPU_MEM=0.9\nVLLM_MAX_LEN=32768\nVLLM_MODEL=placeholder\n' > "$s6/.env"
 
-out6=$(cd "$s6" && make env-sync)
+out6=$(cd "$s6" && make sync HF_CACHE="$s6/no-cache")
 
 if grep -q '^VLLM_MAX_LEN=' "$s6/.env"; then
     echo "FAIL: scenario 6 — retired VLLM_MAX_LEN=32768 should be removed from .env"; fail=1
 fi
 if [[ $(grep -c . "$s6/.env") != 3 ]] || ! grep -q '^VLLM_TAG=latest$' "$s6/.env"; then
-    echo "FAIL: scenario 6 — env-sync must keep every other line of .env"; fail=1
+    echo "FAIL: scenario 6 — sync must keep every other line of .env"; fail=1
 fi
 if ! grep -q '^VLLM_MAX_LEN=32768$' "$s6/.env.bak" 2>/dev/null; then
-    echo "FAIL: scenario 6 — env-sync should leave the original in .env.bak"; fail=1
+    echo "FAIL: scenario 6 — sync should leave the original in .env.bak"; fail=1
 fi
 if ! echo "$out6" | grep -q 'removed retired default VLLM_MAX_LEN=32768'; then
-    echo "FAIL: scenario 6 — env-sync didn't report the removal"; fail=1
+    echo "FAIL: scenario 6 — sync didn't report the removal"; fail=1
 fi
-if [[ -n "$(cd "$s6" && make env-sync)" ]]; then
-    echo "FAIL: scenario 6 — second env-sync should print nothing"; fail=1
+if (cd "$s6" && make sync HF_CACHE="$s6/no-cache") | grep -q 'removed retired default'; then
+    echo "FAIL: scenario 6 — second sync should not remove anything"; fail=1
 fi
 printf 'VLLM_MAX_LEN=65536\n' > "$s6/.env"
-(cd "$s6" && make env-sync >/dev/null)
+(cd "$s6" && make sync HF_CACHE="$s6/no-cache" >/dev/null)
 if ! grep -q '^VLLM_MAX_LEN=65536$' "$s6/.env"; then
     echo "FAIL: scenario 6 — a customized VLLM_MAX_LEN must be left alone"; fail=1
 fi
 
+# --- scenario 7: deprecated aliases still work and point at the new name ---
+s7="$tmp/scenario7"
+mkdir -p "$s7/envs"
+cp "$SCRIPT_DIR/Makefile" "$s7/Makefile"
+hf_cache7="$s7/hf-cache"
+mk_repo "$hf_cache7" orgC Unique-Model
+for alias in hf-sync env-sync; do
+    rm -f "$s7/envs/unique-model.env"
+    err7=$(cd "$s7" && make "$alias" HF_CACHE="$hf_cache7" 2>&1 >/dev/null)
+    if [[ ! -f "$s7/envs/unique-model.env" ]]; then
+        echo "FAIL: scenario 7 — \`make $alias\` should still run sync"; fail=1
+    fi
+    if ! grep -q "is now \`make sync\`" <<<"$err7"; then
+        echo "FAIL: scenario 7 — \`make $alias\` should print a rename note on stderr"; fail=1
+    fi
+done
+
 if [[ $fail -eq 0 ]]; then
-    echo "PASS: vllm hf-sync (collisions + incremental + rename guard + .bak restore + non-chat update) and env-sync"
+    echo "PASS: vllm sync (collisions + incremental + rename guard + .bak restore + non-chat update + retired .env defaults + aliases)"
 else
     exit 1
 fi

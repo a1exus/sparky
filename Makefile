@@ -20,7 +20,7 @@ ROOT ?= .
 # in the open-webui compose project (the UI depends_on ollama).
 ENGINES := vllm llama-cpp ollama open-webui
 
-.PHONY: help list up down
+.PHONY: help list sync up down
 
 help:  ## Show this help.
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-10s\033[0m %s\n",$$1,$$2}' $(MAKEFILE_LIST)
@@ -30,12 +30,18 @@ help:  ## Show this help.
 	@echo "  make up engine=llama-cpp            — llama-cpp, empty ENV = router mode"
 	@echo "  make down engine=vllm               — stop just that engine"
 	@echo "  make list                           — model variants for vllm / llama-cpp"
+	@echo "  make sync                           — after hf download / git pull: sync both stacks"
 	@echo
 	@echo "What's running: docker ps -a   |   what's on the GPU: nvidia-smi"
 
 list:  ## List available model variants for vllm and llama-cpp.
 	@echo "vllm:";      $(MAKE) -s -C $(ROOT)/vllm list      2>/dev/null | sed 's/^/  /' || echo "  (unavailable)"
 	@echo "llama-cpp:"; $(MAKE) -s -C $(ROOT)/llama-cpp list 2>/dev/null | sed 's/^/  /' || echo "  (unavailable)"
+
+sync:  ## Reconcile vllm + llama-cpp against the HF cache (run after `hf download` or `git pull`).
+	@echo "== vllm";      $(MAKE) --no-print-directory -C $(ROOT)/vllm sync
+	@echo
+	@echo "== llama-cpp"; $(MAKE) --no-print-directory -C $(ROOT)/llama-cpp sync
 
 up:  ## Start one engine. Usage: make up engine=<name> [ENV=<variant>]
 	@case "$(engine)" in \

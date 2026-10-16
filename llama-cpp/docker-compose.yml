@@ -34,7 +34,7 @@ services:
       # Reuse files already downloaded by the HuggingFace CLI on the host.
       # Layout: hub/models--<org>--<repo>/snapshots/<rev>/<file>
       - ${HF_CACHE_HOST:-/opt/hf/.cache/huggingface}:/root/.cache/huggingface:ro
-      # Symlink farm populated by `make hf-sync` on the host. Symlinks target
+      # Symlink farm populated by `make sync` on the host. Symlinks target
       # container-side absolute paths (under /root/.cache/huggingface) so they
       # resolve in-container; viewed on the host they'll appear broken.
       - ${SYMLINK_FARM_HOST:-/opt/hf/.cache/llama-cpp-models}:/models:ro
