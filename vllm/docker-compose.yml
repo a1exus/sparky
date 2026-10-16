@@ -37,7 +37,12 @@ services:
       VLLM_MODEL: ${VLLM_MODEL:?VLLM_MODEL must be set in env file}
       VLLM_SERVED_NAME: ${VLLM_SERVED_NAME:-}
       VLLM_GPU_MEM: ${VLLM_GPU_MEM:-0.9}
-      VLLM_MAX_LEN: ${VLLM_MAX_LEN:-8192}
+      # Empty → entrypoint omits --max-model-len; vLLM derives it from
+      # the model's config.json.
+      VLLM_MAX_LEN: ${VLLM_MAX_LEN:-}
+      # No colon on purpose: unset → qwen3_xml, but an explicit empty
+      # `VLLM_TOOL_PARSER=` in a variant stays empty (tool-calling off).
+      VLLM_TOOL_PARSER: ${VLLM_TOOL_PARSER-qwen3_xml}
     entrypoint: ["/usr/local/bin/vllm-entrypoint"]
     command: []
     deploy:

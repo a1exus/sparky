@@ -122,7 +122,10 @@ hf-sync:  ## Reconcile envs against the HF cache: create new, restore from .bak,
 	            echo ""; \
 	            echo "# Optional per-variant overrides — uncomment to use."; \
 	            echo "# VLLM_GPU_MEM=0.9"; \
+	            echo "# Context length; unset → derived from the model's config.json."; \
 	            echo "# VLLM_MAX_LEN=32768"; \
+	            echo "# Tool-call parser; empty disables tool-calling (non-chat models)."; \
+	            echo "# VLLM_TOOL_PARSER="; \
 	        } > "$$file"; \
 	        created=$$((created + 1)); \
 	    fi; \
