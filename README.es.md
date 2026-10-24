@@ -137,7 +137,7 @@ En un host nuevo, en este orden:
    docker compose up -d
    ```
 
-   El nodo se registra como `spark-1822.<tailnet>.ts.net` con un certificado MagicDNS real de confianza pública; Tailscale Serve conecta `:80`/`:443` en la tailnet con Traefik. Para URLs de tailnet por backend (`https://vllm.<tailnet>.ts.net`, `https://traefik.<tailnet>.ts.net`, …), crea un [Tailscale VIP Service](https://tailscale.com/kb/1417/services) por backend y aplícalo con `make -C /opt/tailscale services-apply` — ver [`tailscale/README.md`](tailscale/README.md) para la guía completa.
+   El nodo se registra como `spark-1822.<tailnet>.ts.net` con un certificado MagicDNS real de confianza pública; Tailscale Serve conecta `:80`/`:443` en la tailnet con Traefik. Para URLs de tailnet por backend (`https://vllm.<tailnet>.ts.net`, `https://traefik.<tailnet>.ts.net`, …), crea un [Tailscale VIP Service](https://tailscale.com/kb/1417/services) por backend y decláralo en `tailscale/serve.json` (se aplica y anuncia automáticamente en cada arranque del contenedor) — ver [`tailscale/README.md`](tailscale/README.md) para la guía completa.
 
 ## Flujo de despliegue
 

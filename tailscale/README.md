@@ -9,7 +9,8 @@ Based on Tailscale's [Connect a Docker container](https://tailscale.com/docs/fea
 ```
 tailscale/
 ├── docker-compose.yml          # tailscale sidecar, joined to the traefik network, Serve config mounted
-├── serve.json                  # Tailscale Serve config — TLS on :443, proxy / → http://traefik:80
+├── serve.json                  # Tailscale Serve config — node :80/:443 + every VIP service → traefik
+├── Makefile                    # `make status` — live serve config + advertised services
 ├── .env.example                # committed; copy to .env and fill in
 └── .env                        # not committed (gitignored)
 ```
@@ -54,7 +55,7 @@ tailnet client  ──(http  on :80 )──>  tailscale  ──(http  )──>  
                                                                        │ web entrypoint
                                                                        │ 308 → https
                                                                        ▼
-tailnet client  ──(https on :443)──>  tailscale  ──(https-insecure)──> https://traefik:443
+tailnet client  ──(https on :443)──>  tailscale  ──(https+insecure)──> https://traefik:443
                                                                        │
                                                                        │ Host header routing
                                                                        ▼
@@ -64,8 +65,8 @@ tailnet client  ──(https on :443)──>  tailscale  ──(https-insecure)�
 - The Tailscale daemon runs in userspace mode (no `/dev/net/tun`, no privileged caps) and registers as one node on your tailnet using `TS_AUTHKEY`.
 - [Tailscale Serve](https://tailscale.com/kb/1242/tailscale-serve) is configured via the mounted `serve.json`. The container substitutes `${TS_CERT_DOMAIN}` with the node's MagicDNS hostname at startup, then exposes two listeners:
   - **`:80` plain HTTP**, proxied to `http://traefik:80`. Traefik's `web` entrypoint then 308-redirects to HTTPS. The redirect's `Location` header preserves the tailnet `Host`, so the client follows back to the `:443` listener below — one extra hop on first request, then HTTPS the rest of the way.
-  - **`:443` HTTPS**, with TLS terminated using the publicly-trusted MagicDNS cert, proxied to `https-insecure://traefik:443`. The `-insecure` modifier skips Traefik's wildcard-cert verification (the inner connection is over the trusted `traefik` Docker network, container-to-container — no external attacker reachable). Traefik's `websecure` entrypoint terminates the inner TLS with its own wildcard and routes by Host header.
-- Why not just proxy `:443` to `http://traefik:80`? Because Traefik would see plain HTTP on its `web` entrypoint and 308-redirect — sending the client back through Tailscale `:443` → http://traefik:80 → 308 again → infinite loop. `https-insecure://traefik:443` lands directly on `websecure` and avoids the redirect entirely.
+  - **`:443` HTTPS**, with TLS terminated using the publicly-trusted MagicDNS cert, proxied to `https+insecure://traefik:443`. The `+insecure` modifier (plus, not hyphen — tailscaled doesn't recognise `https-insecure://` and returns 502) skips Traefik's wildcard-cert verification (the inner connection is over the trusted `traefik` Docker network, container-to-container — no external attacker reachable). Traefik's `websecure` entrypoint terminates the inner TLS with its own wildcard and routes by Host header.
+- Why not just proxy `:443` to `http://traefik:80`? Because Traefik would see plain HTTP on its `web` entrypoint and 308-redirect — sending the client back through Tailscale `:443` → http://traefik:80 → 308 again → infinite loop. `https+insecure://traefik:443` lands directly on `websecure` and avoids the redirect entirely.
 - State (node key, machine identity) lives in a named docker volume `tailscale-state`, not under `/opt` — so the host's git working tree stays free of secrets.
 
 ### Host-header routing — applied
@@ -94,56 +95,41 @@ Six services map to the six Traefik backends:
 | `svc:open-webui`  | `open-webui.<tailnet>.ts.net`    | Open WebUI            |
 | `svc:netdata`     | `netdata.<tailnet>.ts.net`       | Netdata               |
 
-All six share a single [`services.json`](services.json) — they're indistinguishable on the wire (each just proxies to the same `traefik` container, which routes by Host header). The file uses the **single-service** form (`ServiceDetailsFile` from `ipn/conffile/serveconf.go`), applied per service with `--service=svc:<name>`:
+All six are declared in the `Services` block of [`serve.json`](serve.json), next to the node's own `:80`/`:443` config. They're indistinguishable on the wire — each proxies to the same `traefik` container, which routes by Host header:
 
 ```json
-{
-  "version": "0.0.1",
-  "endpoints": {
-    "tcp:80":  "http://traefik:80",
-    "tcp:443": "https+insecure://traefik:443"
-  }
+"Services": {
+  "svc:vllm": {
+    "TCP": { "80": { "HTTP": true }, "443": { "HTTPS": true } },
+    "Web": {
+      "vllm.cuscus-macaroni.ts.net:80":  { "Handlers": { "/": { "Proxy": "http://traefik:80" } } },
+      "vllm.cuscus-macaroni.ts.net:443": { "Handlers": { "/": { "Proxy": "https+insecure://traefik:443" } } }
+    }
+  },
+  ...
 }
 ```
 
-> The scheme is `https+insecure://` (plus, not hyphen) — different from the `https-insecure://` accepted in the Proxy field of `serve.json`. The two config surfaces grew up separately; the Services file matches the `ServiceProtocol` constants in `ipn/conffile/serveconf.go`.
+The `Web` keys are the service's full MagicDNS name. containerboot only substitutes `${TS_CERT_DOMAIN}` (the *node's* name), so the tailnet suffix `cuscus-macaroni.ts.net` is written out literally — change it there if the tailnet is renamed.
 
-**Setup is two phases.** Phase one (one-time, in the admin console): create each service at <https://login.tailscale.com/admin/services> with required ports `tcp/80` + `tcp/443`. Tailscale can't auto-create services from the CLI — they have to exist in the policy before a node can advertise them.
-
-Phase two (on the host): use the `Makefile` to push the config and advertise:
+**Setup is one manual step.** In the admin console, create each service at <https://login.tailscale.com/admin/services> with required ports `tcp/80` + `tcp/443` — Tailscale can't create services from the node. Everything else is declarative: on every start, containerboot applies `serve.json` and advertises each service it declares (`TS_EXPERIMENTAL_SERVICE_AUTO_ADVERTISEMENT`, on by default). To add or remove a service, edit `serve.json` and `docker compose up -d` — containerboot also watches the file and re-applies changes.
 
 ```bash
 cd /opt/tailscale
-make services-apply     # set-config + advertise every service in $(SERVICES)
-make services-status    # show the daemon's view of each service
-make services-clear     # drain + clear all services from this node
+make status     # live serve config + AdvertiseServices from the daemon's prefs
 ```
-
-State lives in the `tailscale-state` docker volume — survives restarts. The list of services is `$(SERVICES)` in the Makefile; override with `make services-apply SERVICES="svc:foo svc:bar"` for a subset.
 
 Once all six advertise, Traefik routing accepts both `<svc>.spark-1822.local` (LAN) and `<svc>.<tailnet>.ts.net` (tailnet) on every router — the rules were relaxed from `<svc>.spark{x:.+}` to `<svc>.{x:.+}` to match either form.
 
 ### Troubleshooting: admin console shows "needs configuration"
 
-If the Tailscale admin console flags every VIP service as **needs configuration** at once, the node has stopped advertising them — usually because the `tailscale` container was restarted or recreated (e.g. during host troubleshooting) without re-running phase two. Confirm with `make services-status`: each service prints an empty `{}` instead of the `endpoints` block. Fix is just re-running phase two:
+The node isn't advertising the service. Check `make status`: the service should appear under `Services` in the serve config and in `AdvertiseServices`.
 
-```bash
-cd /opt/tailscale
-make services-apply
-make services-status   # confirm every service now shows real endpoints, not {}
-```
-
-The service *definitions* (created in the admin console, phase one) aren't lost — only the node's advertisement of them, which isn't automatically restored by `docker compose up`/`restart` the way the base node identity is. Re-running `services-apply` after any tailscale container restart is the safe default if you're not sure whether it dropped.
+Historically this happened after every container recreate: services were pushed imperatively (`tailscale serve set-config` + `advertise`), but containerboot *replaces* the whole serve config with `serve.json` at startup and re-runs `tailscale up`, which wiped both. Declaring services in `serve.json` is what makes them survive — never configure them with `tailscale serve` by hand, since the next restart discards it.
 
 ### Legacy `svc:spark`
 
-The first VIP service set up here was `svc:spark` — one service proxying everything to Traefik, with a special bare-host fallback on the Traefik dashboard router to catch the no-subdomain Host header. The per-backend setup above supersedes it: hit `traefik.<tailnet>.ts.net` for the dashboard instead.
-
-`svc:spark` still works as long as the dashboard router carries the `|| HostRegexp(`spark{x:.+}`)` fallback in `traefik/dynamic/services.yml`. To retire it:
-
-1. `make services-clear SERVICES="svc:spark"` on the host (drains + clears).
-2. Delete the service in the admin console.
-3. Drop the `|| HostRegexp(`spark{x:.+}`)` half from the `traefik` router in `dynamic/services.yml`.
+The first VIP service set up here was `svc:spark` — one service proxying everything to Traefik. The per-backend setup above supersedes it, and it is no longer declared in `serve.json`, so this node doesn't advertise it. Delete it in the admin console; hit `traefik.<tailnet>.ts.net` for the dashboard instead.
 
 ## Logs
 
