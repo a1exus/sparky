@@ -137,7 +137,7 @@ TLS происходит из трёх разных корней: Traefik вып
    docker compose up -d
    ```
 
-   Узел регистрируется как `spark-1822.<tailnet>.ts.net` с настоящим публично доверенным сертификатом MagicDNS; Tailscale Serve связывает `:80`/`:443` в tailnet с Traefik. Для URL по каждому бэкенду в tailnet (`https://vllm.<tailnet>.ts.net`, `https://traefik.<tailnet>.ts.net`, …) создайте по одному [Tailscale VIP Service](https://tailscale.com/kb/1417/services) на бэкенд и примените через `make -C /opt/tailscale services-apply` — полное руководство в [`tailscale/README.md`](tailscale/README.md).
+   Узел регистрируется как `spark-1822.<tailnet>.ts.net` с настоящим публично доверенным сертификатом MagicDNS; Tailscale Serve связывает `:80`/`:443` в tailnet с Traefik. Для URL по каждому бэкенду в tailnet (`https://vllm.<tailnet>.ts.net`, `https://traefik.<tailnet>.ts.net`, …) создайте по одному [Tailscale VIP Service](https://tailscale.com/kb/1417/services) на бэкенд и объявите его в `tailscale/serve.json` (применяется и анонсируется автоматически при каждом запуске контейнера) — полное руководство в [`tailscale/README.md`](tailscale/README.md).
 
 ## Процесс развёртывания
 

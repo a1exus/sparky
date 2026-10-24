@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Fixed
+
+- `tailscale/serve.json`: Tailscale VIP services no longer drop to "needs configuration" when the `tailscale` container is recreated. containerboot replaces the whole serve config with `serve.json` on every start (and re-runs `tailscale up`), wiping services that `make services-apply` had pushed imperatively. All six services (`svc:traefik`, `svc:vllm`, `svc:llama`, `svc:ollama`, `svc:open-webui`, `svc:netdata`) are now declared in a `Services` block in `serve.json`, which containerboot applies and auto-advertises (`TS_EXPERIMENTAL_SERVICE_AUTO_ADVERTISEMENT`, default on). Service listeners are keyed by full MagicDNS name, so the tailnet suffix (`cuscus-macaroni.ts.net`) is written literally.
+- `tailscale/serve.json`: node `:443` proxy target is now `https+insecure://traefik:443`. tailscaled doesn't recognise the hyphenated `https-insecure://` scheme, so `https://spark-1822.<tailnet>.ts.net/` returned 502.
+
+### Removed
+
+- `tailscale/services.json` and `make services-apply` / `services-clear`: superseded by the declarative `Services` block in `serve.json`. `make services-status` is replaced by `make status` (live serve config + `AdvertiseServices`).
+- Legacy `svc:spark` is no longer advertised by this node; delete it in the admin console.
+
 ## [0.8.0] - 2026-10-15
 
 ### Added

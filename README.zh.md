@@ -137,7 +137,7 @@ TLS 证书来自三个不同的根：Traefik 自签发内部 CA（客户端只�
    docker compose up -d
    ```
 
-   该节点会以 `spark-1822.<tailnet>.ts.net` 的身份注册，并获得真实的公共信任 MagicDNS 证书；Tailscale Serve 会将 tailnet 上的 `:80`/`:443` 接入 Traefik。若需要为每个后端单独提供 tailnet URL（`https://vllm.<tailnet>.ts.net`、`https://traefik.<tailnet>.ts.net` 等），请为每个后端创建一个 [Tailscale VIP Service](https://tailscale.com/kb/1417/services) 并通过 `make -C /opt/tailscale services-apply` 应用 —— 完整流程见 [`tailscale/README.md`](tailscale/README.md)。
+   该节点会以 `spark-1822.<tailnet>.ts.net` 的身份注册，并获得真实的公共信任 MagicDNS 证书；Tailscale Serve 会将 tailnet 上的 `:80`/`:443` 接入 Traefik。若需要为每个后端单独提供 tailnet URL（`https://vllm.<tailnet>.ts.net`、`https://traefik.<tailnet>.ts.net` 等），请为每个后端创建一个 [Tailscale VIP Service](https://tailscale.com/kb/1417/services) 并在 `tailscale/serve.json` 中声明（每次容器启动时自动应用并通告） —— 完整流程见 [`tailscale/README.md`](tailscale/README.md)。
 
 ## 部署流程
 
