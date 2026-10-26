@@ -23,8 +23,40 @@ cp .env.example .env
 #   WEBUI_SECRET_KEY   — generate with: openssl rand -hex 32  (REQUIRED)
 #   WEBUI_AUTH         — true (require login) or false (open)
 #   ENABLE_SIGNUP      — true initially; flip to false after admin registers
-#   OLLAMA_KEEP_ALIVE  — "5m" (default) / "-1" (forever) / "0" (unload now)
+#   OLLAMA_KEEP_ALIVE  — "30m" (default) / "5m" / "-1" (forever) / "0" (unload now)
+#   OLLAMA_FLASH_ATTENTION — 1 (default; required for a quantized KV cache)
+#   OLLAMA_KV_CACHE_TYPE   — f16 (default) / q8_0 / q4_0
+#   OLLAMA_CONTEXT_LENGTH  — 131072 (default); the only knob for /v1 clients
+#   OLLAMA_NO_CLOUD        — 1 (default; local-only) / 0 (allow :cloud models + web search)
+#   OLLAMA_GPU_OVERHEAD    — 8589934592 (default; 8 GiB kept free for OS + other stacks)
 ```
+
+### DGX Spark tuning
+
+The GB10 GPU has no dedicated VRAM — it shares the host's 128 GB of unified memory with every other stack (`vllm/`, `llama-cpp/`, `speaches`). Left alone, Ollama sees "lots of VRAM" and defaults to a **256k** context with an **f16** KV cache: about 23 GB of KV for `gemma4:31b` before a single token is generated, plus up to 32 context checkpoints (~800 MB each). The compose defaults trade that down:
+
+| Setting | Ollama default on Spark | Here | Effect |
+|---|---|---|---|
+| `OLLAMA_FLASH_ATTENTION` | auto | `1` | Pinned on; quantized KV requires it |
+| `OLLAMA_KV_CACHE_TYPE` | `f16` | `f16` | Kept at full precision on purpose — see below |
+| `OLLAMA_CONTEXT_LENGTH` | 262144 | `131072` | Half the KV allocation; still above the largest client prompts (~100k) |
+| `OLLAMA_KEEP_ALIVE` | 5m | `30m` | Agent clients pause 5–30 min between turns; an unload discards the prompt cache and the next turn re-prefills the whole prompt (55k tokens took 70 s at ~660 tok/s) |
+| `OLLAMA_GPU_OVERHEAD` | 0 | 8 GiB | Scheduler never plans to fill unified memory; headroom for the OS, `speaches`, `vllm`/`llama-cpp` |
+
+The overhead matters more on the Spark than on a discrete GPU. NVIDIA [documents](https://docs.nvidia.com/dgx/dgx-spark/known-issues.html) that `cudaMemGetInfo` — what Ollama's scheduler sizes against — doesn't count reclaimable memory, so it's an estimate, and when unified memory does run out the GB10 tends to hang rather than return a clean CUDA OOM (this host logged `NV_ERR_NO_MEMORY` before an unplanned reboot on 2026-10-16). Raise the reserve if you run `vllm/` alongside Ollama.
+
+Net: KV for `gemma4:31b` drops from ~23 GB to ~11 GB; for `qwen3.8:27b` (the main agent model) from ~17 GB to ~8.5 GB.
+
+**Sizing the context.** Ollama's main clients are agent/API tools over the OpenAI-compatible `/v1/chat/completions` endpoint, which has no way to pass `num_ctx` — `OLLAMA_CONTEXT_LENGTH` *is* their window, and a prompt longer than it is truncated silently. Size it from real traffic before lowering it:
+
+```bash
+docker logs ollama 2>&1 | grep -o 'task.n_tokens = [0-9]*' | grep -o '[0-9]*$' | sort -n | tail -3   # largest prompts
+docker logs ollama 2>&1 | grep -c 'truncated = [1-9]'                                               # truncations (want 0)
+```
+
+Keep `OLLAMA_NUM_PARALLEL` at its default of 1 for agent workloads: each extra slot multiplies KV memory, and a single slot keeps the client's conversation prefix cached between turns (follow-up turns re-evaluate only the new tokens).
+
+**Why not quantize the KV cache?** `q8_0` would halve KV memory again, but it's global (every model gets it) and per the [Ollama FAQ](https://docs.ollama.com/faq) the quality hit depends on model and task — models with a high GQA ratio, like the Qwen family, feel it most. The main client workload is long-context agent traffic on `qwen3.8:27b` (GQA 6), where tool calls are the first thing to degrade, and the saving there is only ~4 GB on a 128 GB box. Switch to `OLLAMA_KV_CACHE_TYPE=q8_0` only if memory becomes the constraint (e.g. running `vllm/` alongside). Verify with `docker exec ollama ollama ps` (the `CONTEXT` column) and `docker logs ollama | grep "KV buffer"`.
 
 ## Deploy
 
