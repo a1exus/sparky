@@ -25,7 +25,7 @@ The GB10 has 124 GiB of VRAM. Three engines on this host want it; how they treat
 | Engine | VRAM posture | Coexistence |
 |---|---|---|
 | **llama-cpp router mode** (default) | **lazy** — no model resident at start; loads on first request to that model ID, LRU evicts at `MODELS_MAX` | Coexists with anything else that's also lazy |
-| **Ollama** | **lazy** — loads on chat request, unloads after `keep_alive` (5 min by default) | Coexists with router mode |
+| **Ollama** | **lazy** — loads on chat request, unloads after `keep_alive` (30 min here, set by `OLLAMA_KEEP_ALIVE` in `open-webui/`) | Coexists with router mode |
 | **llama-cpp classic single-model mode** | **eager** — `-ngl 999` parks every layer at startup (~65 GiB for the default 120b) | Requires the rest of the GPU |
 | **vLLM** | **eager** — `--gpu-memory-utilization 0.9` reserves ~90% of VRAM at start whether or not it's serving | Exclusive; can't coexist with anything else loading models |
 

@@ -9,11 +9,17 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ### Changed
 
-- `open-webui/docker-compose.yml`, `.env.example`, `README.md`: Ollama tuned for DGX Spark's unified memory — `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=f16` and `OLLAMA_CONTEXT_LENGTH=131072` by default (each overridable in `.env`). Unset, Ollama auto-picked a 256k context on the GB10 (~23 GB of KV for `gemma4:31b`, ~17 GB for `qwen3.8:27b`); the 128k cap halves that. KV stays f16 deliberately: the Ollama FAQ flags high-GQA Qwen models as most hurt by KV quantization, and q8_0 would save only ~4 GB on the main agent model. 128k is sized from spark-1822's traffic — OpenAI-compatible agent clients send prompts up to ~100k tokens and can't set `num_ctx`, so the default is their window. **Host migration**: `docker compose up -d ollama` in `open-webui/` after `git pull`; no `.env` edits needed.
-- `open-webui/docker-compose.yml`: Ollama hardened — `cap_drop: [ALL]` (verified on the GB10: starts, detects CUDA, pulls and loads models 100% on GPU with no capabilities) and local-only by default via `OLLAMA_NO_CLOUD=1` (no `:cloud` models or Ollama web search; set `OLLAMA_NO_CLOUD=0` in `.env` to re-enable).
-- `open-webui/docker-compose.yml`, `.env.example`: `OLLAMA_KEEP_ALIVE` default 5m → 30m. On spark-1822, agent clients paused 5–30 min between turns 15 times in 27h, and each pause unloaded the model and discarded its cached prompt prefix — the next turn re-prefilled the whole prompt at ~660 tok/s (a 55k-token prompt took 70 s; ~100k would take ~2.5 min) plus a ~10 s load. **Host migration**: hosts whose `.env` was copied from the old `.env.example` carry an explicit `OLLAMA_KEEP_ALIVE=5m`, which overrides the new default — change it to `30m` (or delete the line).
-- `open-webui/docker-compose.yml` (`ollama` service): container hardening — `read_only: true` with a `/tmp` tmpfs, `init: true` (reaps the per-model `llama-server` runners and forwards signals), `pids_limit: 2048` (measured peak ~130). Ollama itself exits within ~1 s on SIGTERM without draining in-flight requests, so restarts cut any generation in progress — deploy when no agent is mid-turn. Verified on the GB10 together with `cap_drop: [ALL]`: model pull, load at 100% GPU and generation all work.
-- `open-webui/docker-compose.yml`: `OLLAMA_GPU_OVERHEAD=8589934592` (8 GiB) by default — Ollama's scheduler keeps that much unified memory free for the OS and other GPU stacks. On GB10, exhausting unified memory can hang the host instead of raising a CUDA OOM (spark-1822 logged `NV_ERR_NO_MEMORY` before a reboot on 2026-10-16).
+- **`ollama` service tuned for DGX Spark and agent traffic** (`open-webui/docker-compose.yml`, `.env.example`, `README.md`). Values are sized from spark-1822's Ollama logs, where the real clients are agent/API tools on the OpenAI-compatible `/v1/chat/completions` endpoint (prompts p50 3.8k, p90 84.7k, max 99.5k tokens), and from the [Ollama FAQ](https://docs.ollama.com/faq). Every setting can be overridden in `.env`.
+  - `OLLAMA_CONTEXT_LENGTH=131072`. Unset, Ollama auto-picked 256k on the GB10 (~23 GB of KV for `gemma4:31b`, ~17 GB for `qwen3.8:27b`), so this halves the allocation. `/v1` clients can't send `num_ctx`, so this default is their whole window: keep it above their largest prompt, or Ollama silently truncates.
+  - `OLLAMA_KV_CACHE_TYPE=f16`, kept at full precision on purpose. The FAQ flags high-GQA Qwen models as the most hurt by KV quantization, and `q8_0` would save only ~4 GB on the main agent model (`qwen3.8:27b`, GQA 6, 16 attention layers).
+  - `OLLAMA_FLASH_ATTENTION=1`. Ollama already enabled it automatically; pinning it keeps `q8_0` a one-line switch if memory gets tight.
+  - `OLLAMA_KEEP_ALIVE` 5m → 30m. Clients paused 5–30 min between turns 15 times in 27h, and each pause unloaded the model and discarded its cached prompt prefix. The next turn re-prefilled the whole prompt at ~660 tok/s (a 55k-token prompt took 70 s; ~100k would take ~2.5 min) plus a ~10 s load.
+  - `OLLAMA_GPU_OVERHEAD=8589934592` (8 GiB). The scheduler keeps that much unified memory free for the OS and other GPU stacks (`speaches`, `vllm/`, `llama-cpp/`). On GB10, running out of unified memory can hang the host instead of returning a CUDA OOM: spark-1822 logged `NV_ERR_NO_MEMORY` before a reboot on 2026-10-16.
+  - `OLLAMA_NUM_PARALLEL` stays at Ollama's default of 1, now documented. A single slot keeps each agent's prompt prefix cached between turns, and every extra slot multiplies KV memory.
+- `llama-cpp/README.md` "GPU sharing" table: Ollama's keep-alive is now 30 min here, not Ollama's stock 5 min.
+- **Host migration**:
+  1. If `/opt/open-webui/.env` was copied from the old `.env.example`, it carries an explicit `OLLAMA_KEEP_ALIVE=5m` that overrides the new default. Change it to `30m` or delete the line.
+  2. After `git pull`, run `docker compose up -d ollama` in `/opt/open-webui`. Ollama exits within ~1 s on SIGTERM without draining in-flight requests, so do this while no agent is mid-turn. `docker exec ollama ollama ps` should then show CONTEXT `131072` and UNTIL ~30 min.
 
 ### Fixed
 
@@ -24,6 +30,11 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 - `tailscale/services.json` and `make services-apply` / `services-clear`: superseded by the declarative `Services` block in `serve.json`. `make services-status` is replaced by `make status` (live serve config + `AdvertiseServices`).
 - Legacy `svc:spark` is no longer advertised by this node; delete it in the admin console.
+
+### Security
+
+- `ollama` container hardening: `cap_drop: [ALL]`, `read_only: true` with a `/tmp` tmpfs, `init: true` (reaps the per-model `llama-server` runners and forwards signals), and `pids_limit: 2048` (measured peak ~130), next to the existing `no-new-privileges`. Verified together on the GB10: model pull, load at 100% GPU and generation all work.
+- `OLLAMA_NO_CLOUD=1` by default: local-only, with no Ollama cloud models or web search. Model pulls still work. Set `OLLAMA_NO_CLOUD=0` in `.env` to re-enable.
 
 ## [0.8.0] - 2026-10-15
 

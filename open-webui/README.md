@@ -56,7 +56,30 @@ docker logs ollama 2>&1 | grep -c 'truncated = [1-9]'                           
 
 Keep `OLLAMA_NUM_PARALLEL` at its default of 1 for agent workloads: each extra slot multiplies KV memory, and a single slot keeps the client's conversation prefix cached between turns (follow-up turns re-evaluate only the new tokens).
 
-**Why not quantize the KV cache?** `q8_0` would halve KV memory again, but it's global (every model gets it) and per the [Ollama FAQ](https://docs.ollama.com/faq) the quality hit depends on model and task — models with a high GQA ratio, like the Qwen family, feel it most. The main client workload is long-context agent traffic on `qwen3.8:27b` (GQA 6), where tool calls are the first thing to degrade, and the saving there is only ~4 GB on a 128 GB box. Switch to `OLLAMA_KV_CACHE_TYPE=q8_0` only if memory becomes the constraint (e.g. running `vllm/` alongside). Verify with `docker exec ollama ollama ps` (the `CONTEXT` column) and `docker logs ollama | grep "KV buffer"`.
+**Why not quantize the KV cache?** `q8_0` would halve KV memory again, but it's global (every model gets it) and per the [Ollama FAQ](https://docs.ollama.com/faq) the quality hit depends on model and task — models with a high GQA ratio, like the Qwen family, feel it most. The main client workload is long-context agent traffic on `qwen3.8:27b` (GQA 6), where tool calls are the first thing to degrade, and the saving there is only ~4 GB on a 128 GB box. Switch to `OLLAMA_KV_CACHE_TYPE=q8_0` only if memory becomes the constraint (e.g. running `vllm/` alongside).
+
+Verify after a restart:
+
+```bash
+docker exec ollama ollama ps                  # CONTEXT 131072, UNTIL ~30 min out
+docker logs ollama 2>&1 | grep "KV buffer"    # KV size per loaded model
+```
+
+### Hardening
+
+On top of `no-new-privileges`, the `ollama` service runs with:
+
+| Setting | Why |
+|---|---|
+| `cap_drop: [ALL]` | Ollama needs no Linux capabilities: it binds an unprivileged port and writes only to its volume. GPU access comes from the nvidia runtime, not from capabilities. |
+| `read_only: true` + `/tmp` tmpfs | Immutable root filesystem. Models and keys live in the `open-webui-ollama` volume. |
+| `init: true` | An init (tini) as PID 1 reaps the per-model `llama-server` runners and forwards signals, so `docker stop` frees their unified memory. |
+| `pids_limit: 2048` | Bounds runaway forks/threads. Measured peak is ~130. |
+| `OLLAMA_NO_CLOUD=1` | Local-only: no Ollama cloud models or web search. Model pulls still work. |
+
+All five were verified together on the GB10: model pull, load at 100% GPU and generation all work.
+
+**Restarts cut in-flight requests.** Ollama exits within ~1 s on SIGTERM and doesn't finish the requests it's serving, so `stop_grace_period` wouldn't help. Restart or upgrade while no agent is mid-turn; `docker exec ollama ollama ps` shows what's loaded.
 
 ## Deploy
 
@@ -100,12 +123,16 @@ Browse the [Ollama library](https://ollama.com/library) for more.
 
 ## Upgrade
 
-Bump `OLLAMA_TAG` / `OPEN_WEBUI_TAG` in `.env`, then:
+Bump `OLLAMA_TAG` / `OPEN_WEBUI_TAG` in `.env` (or leave them on `latest`), then:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
+
+This restarts `ollama`, which cuts any in-flight generation (see [Hardening](#hardening)), so run it while no agent is mid-turn.
+
+Hosts whose `.env` predates the DGX Spark tuning still have `OLLAMA_KEEP_ALIVE=5m` (copied from the old `.env.example`). It overrides the compose default, so change it to `30m` or delete the line.
 
 ## Logs
 
