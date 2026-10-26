@@ -20,7 +20,35 @@ services:
       - ollama:/root/.ollama
     environment:
       OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
+      # 30m, not Ollama's 5m: agent clients pause 5-30 min between turns, and
+      # an unload throws away the cached prompt prefix — the next turn then
+      # re-prefills the whole prompt at ~660 tok/s on GB10 (55k tokens took
+      # 70s; ~100k would take ~2.5 min) plus a ~10s model load.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # DGX Spark (GB10) tuning. The GPU shares 128 GB of unified memory with
+      # the host and every other stack, so the KV cache is the knob that
+      # matters. Unset, Ollama sizes context by "VRAM" and picks 256k here:
+      # ~23 GB of f16 KV for a 31B model before a token is generated.
+      #
+      # Context: 128k covers the agent/API clients' largest prompts (~100k
+      # tokens seen) plus output headroom. OpenAI-compatible clients
+      # (/v1/chat/completions) can't send num_ctx, so this default IS their
+      # context window; below their largest prompt, Ollama silently truncates.
+      #
+      # KV cache: f16. The main agent model (Qwen3.8 27B, hybrid, 16 attention
+      # layers) needs only ~8 GB of KV at 128k, and the Ollama FAQ flags
+      # high-GQA Qwen models as the most hurt by KV quantization. Use q8_0
+      # (half) only if memory gets tight; it needs flash attention, pinned on.
+      OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
+      OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-f16}
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-131072}
+      # Memory the scheduler must leave free for everything else on the box
+      # (OS, speaches, vllm/llama-cpp). On GB10 the driver can hang the host
+      # instead of returning a clean CUDA OOM when unified memory runs out,
+      # so Ollama must never plan to fill it. Bytes; default 8 GiB.
+      OLLAMA_GPU_OVERHEAD: ${OLLAMA_GPU_OVERHEAD:-8589934592}
+      # Local-only: no Ollama cloud models or web search (model pulls still work).
+      OLLAMA_NO_CLOUD: ${OLLAMA_NO_CLOUD:-1}
     deploy:
       resources:
         reservations:
@@ -34,8 +62,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    # Ollama needs no Linux capabilities: it binds an unprivileged port and
+    # writes only to its own volume. GPU access comes from the nvidia
+    # runtime's device injection, not from capabilities.
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges:true
+    # Immutable root filesystem: models and keys live in the volume; scratch
+    # goes to tmpfs.
+    read_only: true
+    tmpfs:
+      - /tmp
+    # Ollama forks a llama-server runner per loaded model; an init (tini) as
+    # PID 1 reaps them and forwards signals so `docker stop` releases their
+    # unified memory cleanly.
+    init: true
+    # Bounds runaway forks/threads; measured peak is ~130 over a day of use.
+    pids_limit: 2048
     logging:
       driver: json-file
       options:

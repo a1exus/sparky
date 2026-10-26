@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Changed
+
+- **`ollama` service tuned for DGX Spark and agent traffic** (`open-webui/docker-compose.yml`, `.env.example`, `README.md`). Values are sized from spark-1822's Ollama logs, where the real clients are agent/API tools on the OpenAI-compatible `/v1/chat/completions` endpoint (prompts p50 3.8k, p90 84.7k, max 99.5k tokens), and from the [Ollama FAQ](https://docs.ollama.com/faq). Every setting can be overridden in `.env`.
+  - `OLLAMA_CONTEXT_LENGTH=131072`. Unset, Ollama auto-picked 256k on the GB10 (~23 GB of KV for `gemma4:31b`, ~17 GB for `qwen3.8:27b`), so this halves the allocation. `/v1` clients can't send `num_ctx`, so this default is their whole window: keep it above their largest prompt, or Ollama silently truncates.
+  - `OLLAMA_KV_CACHE_TYPE=f16`, kept at full precision on purpose. The FAQ flags high-GQA Qwen models as the most hurt by KV quantization, and `q8_0` would save only ~4 GB on the main agent model (`qwen3.8:27b`, GQA 6, 16 attention layers).
+  - `OLLAMA_FLASH_ATTENTION=1`. Ollama already enabled it automatically; pinning it keeps `q8_0` a one-line switch if memory gets tight.
+  - `OLLAMA_KEEP_ALIVE` 5m → 30m. Clients paused 5–30 min between turns 15 times in 27h, and each pause unloaded the model and discarded its cached prompt prefix. The next turn re-prefilled the whole prompt at ~660 tok/s (a 55k-token prompt took 70 s; ~100k would take ~2.5 min) plus a ~10 s load.
+  - `OLLAMA_GPU_OVERHEAD=8589934592` (8 GiB). The scheduler keeps that much unified memory free for the OS and other GPU stacks (`speaches`, `vllm/`, `llama-cpp/`). On GB10, running out of unified memory can hang the host instead of returning a CUDA OOM: spark-1822 logged `NV_ERR_NO_MEMORY` before a reboot on 2026-10-16.
+  - `OLLAMA_NUM_PARALLEL` stays at Ollama's default of 1, now documented. A single slot keeps each agent's prompt prefix cached between turns, and every extra slot multiplies KV memory.
+- `llama-cpp/README.md` "GPU sharing" table: Ollama's keep-alive is now 30 min here, not Ollama's stock 5 min.
+- **Host migration**:
+  1. If `/opt/open-webui/.env` was copied from the old `.env.example`, it carries an explicit `OLLAMA_KEEP_ALIVE=5m` that overrides the new default. Change it to `30m` or delete the line.
+  2. After `git pull`, run `docker compose up -d ollama` in `/opt/open-webui`. Ollama exits within ~1 s on SIGTERM without draining in-flight requests, so do this while no agent is mid-turn. `docker exec ollama ollama ps` should then show CONTEXT `131072` and UNTIL ~30 min.
+
 ### Fixed
 
 - `tailscale/serve.json`: Tailscale VIP services no longer drop to "needs configuration" when the `tailscale` container is recreated. containerboot replaces the whole serve config with `serve.json` on every start (and re-runs `tailscale up`), wiping services that `make services-apply` had pushed imperatively. All six services (`svc:traefik`, `svc:vllm`, `svc:llama`, `svc:ollama`, `svc:open-webui`, `svc:netdata`) are now declared in a `Services` block in `serve.json`, which containerboot applies and auto-advertises (`TS_EXPERIMENTAL_SERVICE_AUTO_ADVERTISEMENT`, default on). Service listeners are keyed by full MagicDNS name, so the tailnet suffix (`cuscus-macaroni.ts.net`) is written literally.
@@ -16,6 +30,11 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 - `tailscale/services.json` and `make services-apply` / `services-clear`: superseded by the declarative `Services` block in `serve.json`. `make services-status` is replaced by `make status` (live serve config + `AdvertiseServices`).
 - Legacy `svc:spark` is no longer advertised by this node; delete it in the admin console.
+
+### Security
+
+- `ollama` container hardening: `cap_drop: [ALL]`, `read_only: true` with a `/tmp` tmpfs, `init: true` (reaps the per-model `llama-server` runners and forwards signals), and `pids_limit: 2048` (measured peak ~130), next to the existing `no-new-privileges`. Verified together on the GB10: model pull, load at 100% GPU and generation all work.
+- `OLLAMA_NO_CLOUD=1` by default: local-only, with no Ollama cloud models or web search. Model pulls still work. Set `OLLAMA_NO_CLOUD=0` in `.env` to re-enable.
 
 ## [0.8.0] - 2026-10-15
 
