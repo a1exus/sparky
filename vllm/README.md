@@ -20,7 +20,7 @@ Single container on the shared `traefik` Docker network (defined by the `traefik
 
 ### GPU exclusivity
 
-`--gpu-memory-utilization 0.9` (default) reserves ~90% of VRAM at startup. The GB10 has 124 GiB total; Ollama and `llama-cpp/` also want VRAM, so vLLM can't coexist with either of them active. Hence `restart: "no"` here — manual-start.
+`--gpu-memory-utilization` is the share of total GPU memory one vLLM instance may claim (weights, activations and a pre-allocated KV cache), and vLLM refuses to start unless that much is free. The entrypoint sizes it per model (see [Configure](#configure)), so a small model asks for a small share. The GB10 has 124 GiB total; Ollama and `llama-cpp/` also want VRAM, so a large vLLM model can't coexist with either of them active. Hence `restart: "no"` here — manual-start.
 
 The top-level `Makefile` (at `/opt/Makefile`) makes the switch a one-liner per engine — it stops only what you name, so nothing else is disturbed:
 
@@ -49,6 +49,7 @@ cd /opt/vllm && make up ENV=<name>
 vllm/
 ├── docker-compose.yml
 ├── entrypoint.sh        # builds `vllm serve` argv from env; hosts the tool-call parser choice
+├── gpu_mem.py           # sizes --gpu-memory-utilization per model (weights × scale + base, ÷ GPU total)
 ├── Makefile             # make list / make sync / make up ENV=<name>
 ├── envs/                # one .env per model variant
 │   ├── README.md
@@ -64,11 +65,12 @@ vllm/
 
 Two layers:
 
-- **`.env`** (host-wide) — shared across every variant. `VLLM_TAG` (image pin), `HF_CACHE_HOST`, `HF_TOKEN`, default `VLLM_GPU_MEM`. Bootstrapped from `.env.example` by `make up` on first run; gitignored thereafter.
+- **`.env`** (host-wide) — shared across every variant. `VLLM_TAG` (image pin), `HF_CACHE_HOST`, `HF_TOKEN`. Bootstrapped from `.env.example` by `make up` on first run; gitignored thereafter.
 - **`envs/<name>.env`** (per-variant) — just the model selection: `VLLM_MODEL`, `VLLM_SERVED_NAME`, and any per-variant overrides (e.g. `VLLM_MAX_LEN=65536` for one model). A few lines.
 
-Two model-shape knobs are deliberately **not** host-wide defaults, because no single value fits every model:
+Three model-shape knobs are deliberately **not** host-wide defaults, because no single value fits every model:
 
+- `VLLM_GPU_MEM` — unset by default, so `entrypoint.sh` runs `gpu_mem.py` to size `--gpu-memory-utilization` for the model being started: `ceil((weights × 1.25 + 8 GiB) / total GPU memory)`, clamped to 0.05–0.95. *Weights* are the model's top-level `*.safetensors` (else `*.bin`) in the HF cache, or the Hub's file sizes if it isn't downloaded yet; *total* is what torch reports, i.e. what vLLM checks against (`nvidia-smi` shows N/A on the GB10's unified memory). Examples on a 121.7 GiB GB10: Whisper-large-v3-turbo 0.09, gpt-oss-20b 0.20, Qwen3.8-27B 0.60, gpt-oss-120b 0.69. The `launching:` / `gpu-mem:` lines in `docker compose logs vllm` show the arithmetic, and a warning appears when less is free than requested. Set `VLLM_GPU_MEM=<0.0–1.0>` in a variant (or `.env`) to pin it; `VLLM_GPU_MEM_SCALE` / `VLLM_GPU_MEM_BASE_GIB` retune the formula for every auto-sized model (more KV cache and concurrency). If sizing fails the entrypoint falls back to vLLM's own 0.9 and says so.
 - `VLLM_MAX_LEN` — unset by default, so `--max-model-len` is omitted and vLLM derives the context length from the model's `config.json`. Set it per variant to cap a long-context model's KV-cache footprint. (A host-wide 32768 makes vLLM refuse to start models with a shorter native limit, e.g. Whisper's 448.)
 - `VLLM_TOOL_PARSER` — `--tool-call-parser`, default `qwen3_xml` (via `docker-compose.yml`). Set another parser per variant for other families, or `VLLM_TOOL_PARSER=` (empty) to drop `--enable-auto-tool-choice --tool-call-parser` entirely for models with no chat API, e.g. speech-to-text.
 
@@ -132,16 +134,15 @@ Then drop a new file at `envs/<name>.env`:
 ```
 VLLM_MODEL=<org>/<repo>
 VLLM_SERVED_NAME=<friendly-name>
-VLLM_GPU_MEM=0.9
+# VLLM_GPU_MEM=0.5     # optional pin; unset → sized from the model's weights
 # VLLM_MAX_LEN=65536   # optional cap; unset → model's native context
 ```
 
-Non-chat models need their own shape — e.g. `openai/whisper-large-v3-turbo` (served on `/v1/audio/transcriptions`). `make sync` produces the `VLLM_TOOL_PARSER=` line automatically for Whisper; `VLLM_GPU_MEM` is optional (vLLM otherwise reserves 90% of memory for a 1.6 GB model):
+Non-chat models need their own shape — e.g. `openai/whisper-large-v3-turbo` (served on `/v1/audio/transcriptions`). `make sync` produces the `VLLM_TOOL_PARSER=` line automatically for Whisper. No `VLLM_GPU_MEM` is needed: the 1.5 GiB of weights are sized to a ~0.09 share (~11 GiB), where a fixed 0.9 would demand ~109 GiB free:
 
 ```
 VLLM_MODEL=openai/whisper-large-v3-turbo
 VLLM_SERVED_NAME=whisper-large-v3-turbo
-VLLM_GPU_MEM=0.1
 VLLM_TOOL_PARSER=
 ```
 

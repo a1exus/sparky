@@ -265,22 +265,32 @@ out6=$(cd "$s6" && make sync HF_CACHE="$s6/no-cache")
 if grep -q '^VLLM_MAX_LEN=' "$s6/.env"; then
     echo "FAIL: scenario 6 — retired VLLM_MAX_LEN=32768 should be removed from .env"; fail=1
 fi
-if [[ $(grep -c . "$s6/.env") != 3 ]] || ! grep -q '^VLLM_TAG=latest$' "$s6/.env"; then
+if [[ $(grep -c . "$s6/.env") != 2 ]] || ! grep -q '^VLLM_TAG=latest$' "$s6/.env" \
+   || ! grep -q '^VLLM_MODEL=placeholder$' "$s6/.env"; then
     echo "FAIL: scenario 6 — sync must keep every other line of .env"; fail=1
 fi
 if ! grep -q '^VLLM_MAX_LEN=32768$' "$s6/.env.bak" 2>/dev/null; then
     echo "FAIL: scenario 6 — sync should leave the original in .env.bak"; fail=1
 fi
+if grep -q '^VLLM_GPU_MEM=' "$s6/.env"; then
+    echo "FAIL: scenario 6 — retired VLLM_GPU_MEM=0.9 should be removed (GPU share is sized per model now)"; fail=1
+fi
 if ! echo "$out6" | grep -q 'removed retired default VLLM_MAX_LEN=32768'; then
     echo "FAIL: scenario 6 — sync didn't report the removal"; fail=1
+fi
+if ! echo "$out6" | grep -q 'removed retired default VLLM_GPU_MEM=0.9'; then
+    echo "FAIL: scenario 6 — sync didn't report the VLLM_GPU_MEM removal"; fail=1
 fi
 if (cd "$s6" && make sync HF_CACHE="$s6/no-cache") | grep -q 'removed retired default'; then
     echo "FAIL: scenario 6 — second sync should not remove anything"; fail=1
 fi
-printf 'VLLM_MAX_LEN=65536\n' > "$s6/.env"
+printf 'VLLM_MAX_LEN=65536\nVLLM_GPU_MEM=0.35\n' > "$s6/.env"
 (cd "$s6" && make sync HF_CACHE="$s6/no-cache" >/dev/null)
 if ! grep -q '^VLLM_MAX_LEN=65536$' "$s6/.env"; then
     echo "FAIL: scenario 6 — a customized VLLM_MAX_LEN must be left alone"; fail=1
+fi
+if ! grep -q '^VLLM_GPU_MEM=0.35$' "$s6/.env"; then
+    echo "FAIL: scenario 6 — a customized VLLM_GPU_MEM must be left alone"; fail=1
 fi
 
 # --- scenario 7: deprecated aliases still work and point at the new name ---

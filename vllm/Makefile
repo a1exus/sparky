@@ -19,7 +19,9 @@ HF_CACHE ?= /opt/hf/.cache/huggingface
 #   VLLM_MAX_LEN=32768 / 8192 — retired once vLLM derives the context
 #   length from each model's config.json (a fixed host-wide value broke
 #   e.g. Whisper, whose limit is 448).
-RETIRED_DEFAULTS := VLLM_MAX_LEN=32768 VLLM_MAX_LEN=8192
+#   VLLM_GPU_MEM=0.9 — retired once the entrypoint sizes the GPU share per
+#   model (gpu_mem.py); a fixed 0.9 demanded ~109 GiB free even for Whisper.
+RETIRED_DEFAULTS := VLLM_MAX_LEN=32768 VLLM_MAX_LEN=8192 VLLM_GPU_MEM=0.9
 
 # Model architectures (config.json "architectures") with no chat/tool API —
 # `make sync` writes VLLM_TOOL_PARSER= (tool-calling off) into their env
@@ -166,7 +168,8 @@ sync: _retire-defaults  ## Reconcile envs/ against the HF cache (create / restor
 	            echo "VLLM_SERVED_NAME=$$slug"; \
 	            echo ""; \
 	            echo "# Optional per-variant overrides — uncomment to use."; \
-	            echo "# VLLM_GPU_MEM=0.9"; \
+	            echo "# GPU share (0.0-1.0 of total); unset → sized from the model's weights."; \
+	            echo "# VLLM_GPU_MEM=0.5"; \
 	            echo "# Context length; unset → derived from the model's config.json."; \
 	            echo "# VLLM_MAX_LEN=32768"; \
 	            echo "# Tool-call parser; empty disables tool-calling (non-chat models)."; \

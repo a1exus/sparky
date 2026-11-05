@@ -22,12 +22,26 @@ if [[ "${VLLM_MODEL:-}" == "placeholder" ]]; then
     exit 78   # EX_CONFIG (sysexits.h) — configuration error
 fi
 
+# GPU memory share: an explicit VLLM_GPU_MEM wins. Otherwise size it from
+# this model's weights and the GPU (gpu_mem.py) — a fixed host-wide value is
+# too big for small models (vLLM refuses to start unless that share of the
+# GPU is free) and too small for large ones. If sizing fails (no GPU
+# visible, model unknown to the Hub), fall back to vLLM's own default.
+gpu_mem="${VLLM_GPU_MEM:-}"
+if [[ -z "$gpu_mem" ]]; then
+    if ! gpu_mem=$(python3 /usr/local/bin/vllm-gpu-mem --model "${VLLM_MODEL}") \
+       || [[ ! "$gpu_mem" =~ ^0\.[0-9]{2}$ ]]; then
+        gpu_mem=0.9
+        echo "gpu-mem: sizing failed — using vLLM's default ${gpu_mem}; set VLLM_GPU_MEM to override" >&2
+    fi
+fi
+
 args=(
     --model                  "${VLLM_MODEL:?VLLM_MODEL must be set}"
     --served-model-name      "${VLLM_SERVED_NAME:-${VLLM_MODEL}}"
     --host                   "${LISTEN_HOST:-0.0.0.0}"
     --port                   "${LISTEN_PORT:-8000}"
-    --gpu-memory-utilization "${VLLM_GPU_MEM:-0.9}"
+    --gpu-memory-utilization "${gpu_mem}"
 )
 
 # Context length: only passed when VLLM_MAX_LEN is set. Unset → vLLM
@@ -54,9 +68,11 @@ fi
 
 # vLLM's env scanner warns on any unrecognized var with the VLLM_ prefix
 # (which it owns). Our launcher reads VLLM_MODEL / VLLM_SERVED_NAME /
-# VLLM_GPU_MEM / VLLM_MAX_LEN / VLLM_TOOL_PARSER purely to build the
-# argv — drop them from the env before exec so vLLM's own scan stays quiet.
-unset VLLM_MODEL VLLM_SERVED_NAME VLLM_GPU_MEM VLLM_MAX_LEN VLLM_TOOL_PARSER
+# VLLM_GPU_MEM / VLLM_GPU_MEM_SCALE / VLLM_GPU_MEM_BASE_GIB / VLLM_MAX_LEN /
+# VLLM_TOOL_PARSER purely to build the argv — drop them from the env before
+# exec so vLLM's own scan stays quiet.
+unset VLLM_MODEL VLLM_SERVED_NAME VLLM_GPU_MEM VLLM_GPU_MEM_SCALE \
+      VLLM_GPU_MEM_BASE_GIB VLLM_MAX_LEN VLLM_TOOL_PARSER
 
 echo "launching: vllm serve ${args[*]}"
 exec vllm serve "${args[@]}"
