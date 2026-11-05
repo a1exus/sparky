@@ -21,7 +21,7 @@ mk_repo orgD Not-Synced
 
 work="$tmp/work"
 mkdir -p "$work/envs"
-cp "$SCRIPT_DIR/Makefile" "$work/Makefile"
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$work/"
 printf 'VLLM_MODEL=orgA/Shared-Model\n' > "$work/envs/orga-shared-model.env"
 printf 'VLLM_MODEL=orgB/Shared-Model\n' > "$work/envs/orgb-shared-model.env"
 printf 'VLLM_MODEL=orgC/Unique-Model\n' > "$work/envs/unique-model.env"

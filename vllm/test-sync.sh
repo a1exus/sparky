@@ -15,7 +15,7 @@ fail=0
 
 # --- scenario 1: clean-slate collision ---
 s1="$tmp/scenario1"
-cp "$SCRIPT_DIR/Makefile" "$s1/Makefile" 2>/dev/null || { mkdir -p "$s1"; cp "$SCRIPT_DIR/Makefile" "$s1/Makefile"; }
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s1/" 2>/dev/null || { mkdir -p "$s1"; cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s1/"; }
 mkdir -p "$s1/envs"
 
 hf_cache="$s1/hf-cache"
@@ -54,7 +54,7 @@ fi
 if ! echo "$out" | grep -q 'collision:'; then
     echo "FAIL: scenario 1 — sync didn't report the collision"; fail=1
 fi
-if ! echo "$out" | grep -qE '^summary — 3 created, 0 restored, 0 renamed, 0 updated, 0 orphaned, 1 collisions$'; then
+if ! echo "$out" | grep -qE '^summary — 3 created, 0 restored, 0 renamed, 0 skipped, 0 orphaned, 1 collisions$'; then
     echo "FAIL: scenario 1 — unexpected summary line: $(echo "$out" | grep '^summary')"; fail=1
 fi
 
@@ -63,7 +63,7 @@ fi
 # consistently, correctly named regardless of sync history. ---
 s2="$tmp/scenario2"
 mkdir -p "$s2/envs"
-cp "$SCRIPT_DIR/Makefile" "$s2/Makefile"
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s2/"
 cat > "$s2/envs/shared-model.env" <<'ENVEOF'
 # orgA/Shared-Model. Layered on top of ../.env by `make up ENV=shared-model`.
 # Host-wide values (VLLM_TAG, HF_CACHE_HOST, HF_TOKEN, defaults)
@@ -106,7 +106,7 @@ fi
 # Verify that rename doesn't clobber an existing file at the target name.
 s3="$tmp/scenario3"
 mkdir -p "$s3/envs"
-cp "$SCRIPT_DIR/Makefile" "$s3/Makefile"
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s3/"
 
 # Create the stale plain-named file (would normally get renamed)
 cat > "$s3/envs/shared-model.env" <<'ENVEOF'
@@ -164,7 +164,7 @@ fi
 # dropped in favor of a freshly-created default file. ---
 s4="$tmp/scenario4"
 mkdir -p "$s4/envs"
-cp "$SCRIPT_DIR/Makefile" "$s4/Makefile"
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s4/"
 cat > "$s4/envs/shared-model.env.bak" <<'ENVEOF'
 # orgA/Shared-Model. Layered on top of ../.env by `make up ENV=shared-model`.
 VLLM_MODEL=orgA/Shared-Model
@@ -202,62 +202,117 @@ if ! echo "$out4" | grep -q '↩ restore'; then
     echo "FAIL: scenario 4 — sync didn't report the restore"; fail=1
 fi
 
-# --- scenario 5: non-chat detection — a cached repo whose config.json
-# architecture is in NON_CHAT_ARCHS (Whisper) gets VLLM_TOOL_PARSER= on
-# create AND on an existing env file; chat models (even ones without a chat
-# template, like MTP drafters) and repos without config.json are left alone;
-# a second run is a no-op; a user-set value is respected. ---
+# --- scenario 5: format guard — repos vLLM cannot load (GGUF, CTranslate2,
+# no config) are skipped, never given a variant, and flagged by `list`;
+# loadable ones (chat, speech-to-text, anything with a Transformers config)
+# are created with NO tool-parser line: chat-vs-not is decided by vLLM at
+# container start, so sync keeps no per-architecture list. Existing env files
+# are never rewritten, and a second run is a no-op. ---
 s5="$tmp/scenario5"
 mkdir -p "$s5/envs"
-cp "$SCRIPT_DIR/Makefile" "$s5/Makefile"
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s5/"
 hf_cache5="$s5/hf-cache"
 mk_snap() {
-    # mk_snap <root> <org> <repo> <architecture|->
-    local d="$1/hub/models--$2--$3/snapshots/abc123"
+    # mk_snap <root> <org> <repo> <file[=content]>...   (files under snapshots/abc123/)
+    local root="$1" org="$2" repo="$3"; shift 3
+    local d="$root/hub/models--$org--$repo/snapshots/abc123" spec
     mkdir -p "$d"
-    [[ "$4" != "-" ]] && printf '{\n  "architectures": [\n    "%s"\n  ]\n}\n' "$4" > "$d/config.json"
+    for spec in "$@"; do
+        local name="${spec%%=*}" content=""
+        [[ "$spec" == *=* ]] && content="${spec#*=}"
+        mkdir -p "$(dirname "$d/$name")"
+        printf '%s' "$content" > "$d/$name"
+    done
     return 0
 }
-mk_snap "$hf_cache5" openai Whisper-New   WhisperForConditionalGeneration
-mk_snap "$hf_cache5" openai Whisper-Old   WhisperForConditionalGeneration
-mk_snap "$hf_cache5" openai Whisper-Mine  WhisperForConditionalGeneration
-mk_snap "$hf_cache5" Qwen   Chat-Model    Qwen3ForCausalLM
-mk_snap "$hf_cache5" google Gemma-Drafter Gemma4AssistantForCausalLM
-mk_snap "$hf_cache5" orgX   No-Config     -
-# Pre-existing env written by an older hf-sync (no VLLM_TOOL_PARSER line).
-printf 'VLLM_MODEL=openai/Whisper-Old\nVLLM_SERVED_NAME=whisper-old\n' > "$s5/envs/whisper-old.env"
-# Pre-existing env where the user chose a parser explicitly.
-printf 'VLLM_MODEL=openai/Whisper-Mine\nVLLM_SERVED_NAME=whisper-mine\nVLLM_TOOL_PARSER=hermes\n' > "$s5/envs/whisper-mine.env"
+CFG='{"architectures":["X"],"model_type":"x"}'
+mk_snap "$hf_cache5" openai Whisper-New  "config.json=$CFG" model.safetensors
+mk_snap "$hf_cache5" Qwen   Chat-Model   "config.json=$CFG" model-00001.safetensors model-00002.safetensors
+mk_snap "$hf_cache5" org    Old-Style    "config.json=$CFG" pytorch_model.bin
+mk_snap "$hf_cache5" org    Brand-New    "config.json={\"model_type\":\"brandnew2030\"}" model.safetensors
+mk_snap "$hf_cache5" unsloth Some-GGUF   model-Q4_K_M.gguf
+mk_snap "$hf_cache5" deepdml Fast-CT2    'config.json={"alignment_heads":[[1,2]],"lang_ids":[1]}' model.bin vocabulary.json
+mk_snap "$hf_cache5" org    No-Weights   "config.json=$CFG"
+mkdir -p "$hf_cache5/hub/models--orgX--Not-Downloaded-Yet"   # no snapshots: unknown → treated as loadable
+# A variant created by an older sync for a repo vLLM can't load.
+printf 'VLLM_MODEL=unsloth/Some-GGUF\nVLLM_SERVED_NAME=some-gguf\n' > "$s5/envs/some-gguf.env"
+# A user-edited variant: sync must not touch it.
+printf 'VLLM_MODEL=openai/Whisper-New\nVLLM_SERVED_NAME=whisper-new\nVLLM_TOOL_PARSER=hermes\n' > "$s5/envs/whisper-new.env"
 
 out5=$(cd "$s5" && make sync HF_CACHE="$hf_cache5")
 
-for f in whisper-new whisper-old; do
-    if [[ $(grep -c '^VLLM_TOOL_PARSER=$' "$s5/envs/$f.env" 2>/dev/null) != 1 ]]; then
-        echo "FAIL: scenario 5 — $f.env should carry exactly one active 'VLLM_TOOL_PARSER='"; fail=1
+for f in chat-model old-style brand-new not-downloaded-yet; do
+    if [[ ! -f "$s5/envs/$f.env" ]]; then echo "FAIL: scenario 5 — $f.env should be created"; fail=1; fi
+done
+for f in fast-ct2 no-weights; do
+    if [[ -e "$s5/envs/$f.env" ]]; then
+        echo "FAIL: scenario 5 — $f.env must not be created (vLLM cannot load it)"; fail=1
     fi
 done
-if [[ $(grep -c '^VLLM_TOOL_PARSER=' "$s5/envs/whisper-mine.env") != 1 ]] \
-   || ! grep -q '^VLLM_TOOL_PARSER=hermes$' "$s5/envs/whisper-mine.env"; then
-    echo "FAIL: scenario 5 — whisper-mine.env's user-set VLLM_TOOL_PARSER must be left alone"; fail=1
+if ! grep -q '^VLLM_MODEL=unsloth/Some-GGUF$' "$s5/envs/some-gguf.env"; then
+    echo "FAIL: scenario 5 — an existing env file for a skipped repo must be left alone"; fail=1
 fi
-for f in chat-model gemma-drafter no-config; do
-    if grep -q '^VLLM_TOOL_PARSER=' "$s5/envs/$f.env" 2>/dev/null; then
-        echo "FAIL: scenario 5 — $f.env must not get an active VLLM_TOOL_PARSER"; fail=1
+if ! grep -q '^VLLM_TOOL_PARSER=hermes$' "$s5/envs/whisper-new.env" || [[ $(grep -c . "$s5/envs/whisper-new.env") != 3 ]]; then
+    echo "FAIL: scenario 5 — an existing variant must not be rewritten"; fail=1
+fi
+for f in chat-model old-style brand-new not-downloaded-yet; do
+    if grep -q '^VLLM_TOOL_PARSER=' "$s5/envs/$f.env"; then
+        echo "FAIL: scenario 5 — $f.env must not get an active VLLM_TOOL_PARSER (vLLM decides at start)"; fail=1
     fi
 done
-if ! echo "$out5" | grep -qE '^summary — 4 created, 0 restored, 0 renamed, 2 updated, 0 orphaned, 0 collisions$'; then
+for r in 'unsloth/Some-GGUF — GGUF checkpoint' 'deepdml/Fast-CT2 — not a Transformers checkpoint' 'org/No-Weights — no safetensors'; do
+    if ! echo "$out5" | grep -qF "· skip    $r"; then echo "FAIL: scenario 5 — no skip line for '$r'"; fail=1; fi
+done
+if ! echo "$out5" | grep -qE '^summary — 4 created, 0 restored, 0 renamed, 3 skipped, 0 orphaned, 0 collisions$'; then
     echo "FAIL: scenario 5 — unexpected summary line: $(echo "$out5" | grep '^summary')"; fail=1
 fi
 out5b=$(cd "$s5" && make sync HF_CACHE="$hf_cache5")
-if ! echo "$out5b" | grep -qE '^summary — 0 created, 0 restored, 0 renamed, 0 updated, 0 orphaned, 0 collisions$'; then
-    echo "FAIL: scenario 5 — second run should be a no-op: $(echo "$out5b" | grep '^summary')"; fail=1
+if ! echo "$out5b" | grep -qE '^summary — 0 created, 0 restored, 0 renamed, 3 skipped, 0 orphaned, 0 collisions$'; then
+    echo "FAIL: scenario 5 — second run should create nothing: $(echo "$out5b" | grep '^summary')"; fail=1
+fi
+
+# list flags what vLLM can't load, and doesn't tell you to sync what sync skips.
+list5=$(cd "$s5" && make list HF_CACHE="$hf_cache5")
+if ! grep -E '^some-gguf ' <<<"$list5" | grep -q '✗ not loadable by vLLM: GGUF'; then
+    echo "FAIL: scenario 5 — list should flag the stale GGUF variant"; fail=1
+fi
+if ! grep -E 'deepdml/Fast-CT2' <<<"$list5" | grep -q 'skipped by sync'; then
+    echo "FAIL: scenario 5 — list should say sync skips the CT2 repo (not 'run make sync')"; fail=1
+fi
+if grep -q 'not synced — run make sync' <<<"$list5"; then
+    echo "FAIL: scenario 5 — list must not ask for a sync that would skip again"; fail=1
+fi
+
+# up refuses an unloadable variant before touching docker; FORCE=1 overrides.
+mkdir -p "$s5/bin"; printf '#!/usr/bin/env bash\necho "docker $*"\n' > "$s5/bin/docker"; chmod +x "$s5/bin/docker"
+printf 'VLLM_TAG=latest\nVLLM_MODEL=placeholder\n' > "$s5/.env"; : > "$s5/.env.example"
+if up5=$(cd "$s5" && PATH="$s5/bin:$PATH" make up ENV=some-gguf HF_CACHE="$hf_cache5" 2>&1); then rc=0; else rc=$?; fi
+if [[ $rc -ne 2 ]] || ! grep -q 'refusing to start some-gguf: unsloth/Some-GGUF — GGUF checkpoint' <<<"$up5" || grep -q '^docker ' <<<"$up5"; then
+    echo "FAIL: scenario 5 — up must refuse a GGUF variant (make exits 2 on the recipe's 65) without running docker: rc=$rc $up5"; fail=1
+fi
+# (capture first: `| grep -q` + pipefail turns grep's early exit into SIGPIPE on make)
+force5=$(cd "$s5" && PATH="$s5/bin:$PATH" make up ENV=some-gguf FORCE=1 HF_CACHE="$hf_cache5" 2>&1)
+if ! grep -q '^docker compose .* up -d' <<<"$force5"; then
+    echo "FAIL: scenario 5 — FORCE=1 should bypass the guard: $force5"; fail=1
+fi
+ok5=$(cd "$s5" && PATH="$s5/bin:$PATH" make up ENV=chat-model HF_CACHE="$hf_cache5" 2>&1)
+if ! grep -q '^docker compose .* up -d' <<<"$ok5"; then
+    echo "FAIL: scenario 5 — a loadable variant must start normally: $ok5"; fail=1
+fi
+
+# The checker itself must exist: a missing script may not silently disable the guard.
+rm "$s5/model-format.sh"
+if (cd "$s5" && make sync HF_CACHE="$hf_cache5") >/dev/null 2>"$tmp/s5err"; then
+    echo "FAIL: scenario 5 — sync must fail when model-format.sh is missing"; fail=1
+elif ! grep -q 'model-format.sh is missing' "$tmp/s5err"; then
+    echo "FAIL: scenario 5 — missing checker should be reported clearly: $(cat "$tmp/s5err")"; fail=1
 fi
 
 # --- scenario 6: sync drops retired defaults from .env, keeps everything
 # else (including a customized VLLM_MAX_LEN), and is a no-op on re-run. ---
 s6="$tmp/scenario6"
 mkdir -p "$s6"
-cp "$SCRIPT_DIR/Makefile" "$s6/Makefile"
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s6/"
 printf 'VLLM_TAG=latest\nVLLM_GPU_MEM=0.9\nVLLM_MAX_LEN=32768\nVLLM_MODEL=placeholder\n' > "$s6/.env"
 
 out6=$(cd "$s6" && make sync HF_CACHE="$s6/no-cache")
@@ -296,7 +351,7 @@ fi
 # --- scenario 7: deprecated aliases still work and point at the new name ---
 s7="$tmp/scenario7"
 mkdir -p "$s7/envs"
-cp "$SCRIPT_DIR/Makefile" "$s7/Makefile"
+cp "$SCRIPT_DIR/Makefile" "$SCRIPT_DIR/model-format.sh" "$s7/"
 hf_cache7="$s7/hf-cache"
 mk_repo "$hf_cache7" orgC Unique-Model
 for alias in hf-sync env-sync; do
@@ -311,7 +366,7 @@ for alias in hf-sync env-sync; do
 done
 
 if [[ $fail -eq 0 ]]; then
-    echo "PASS: vllm sync (collisions + incremental + rename guard + .bak restore + non-chat update + retired .env defaults + aliases)"
+    echo "PASS: vllm sync (collisions + incremental + rename guard + .bak restore + format guard + retired .env defaults + aliases)"
 else
     exit 1
 fi
