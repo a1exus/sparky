@@ -31,12 +31,19 @@ services:
       - ${HF_CACHE_HOST:-/opt/hf/.cache/huggingface}:/root/.cache/huggingface
       # Launcher script builds the `vllm serve` argv from env vars.
       - ./entrypoint.sh:/usr/local/bin/vllm-entrypoint:ro
+      # Sizes --gpu-memory-utilization from the model's weights and the GPU.
+      - ./gpu_mem.py:/usr/local/bin/vllm-gpu-mem:ro
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       VLLM_USAGE_SOURCE: docker
       VLLM_MODEL: ${VLLM_MODEL:?VLLM_MODEL must be set in env file}
       VLLM_SERVED_NAME: ${VLLM_SERVED_NAME:-}
-      VLLM_GPU_MEM: ${VLLM_GPU_MEM:-0.9}
+      # Empty → entrypoint sizes it per model (gpu_mem.py); set a fraction
+      # (0.0–1.0 of total GPU memory) to pin it. SCALE / BASE_GIB tune the
+      # sizing formula: weights * SCALE + BASE_GIB.
+      VLLM_GPU_MEM: ${VLLM_GPU_MEM:-}
+      VLLM_GPU_MEM_SCALE: ${VLLM_GPU_MEM_SCALE:-}
+      VLLM_GPU_MEM_BASE_GIB: ${VLLM_GPU_MEM_BASE_GIB:-}
       # Empty → entrypoint omits --max-model-len; vLLM derives it from
       # the model's config.json.
       VLLM_MAX_LEN: ${VLLM_MAX_LEN:-}
