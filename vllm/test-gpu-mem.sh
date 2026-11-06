@@ -96,7 +96,8 @@ check "unknown model stdout" "" "$out"
 # --- entrypoint.sh wiring: stub `vllm` (prints its argv) and the helper ---
 bin="$tmp/bin"; mkdir -p "$bin"
 printf '#!/usr/bin/env bash\necho "vllm-args: $*"\n' > "$bin/vllm"; chmod +x "$bin/vllm"
-sed "s|/usr/local/bin/vllm-gpu-mem|$bin/helper|" "$SCRIPT_DIR/entrypoint.sh" > "$bin/entrypoint.sh"
+sed -e "s|/usr/local/bin/vllm-gpu-mem|$bin/helper|" -e "s|/usr/local/bin/vllm-model-kind|$bin/kind|" \
+    "$SCRIPT_DIR/entrypoint.sh" > "$bin/entrypoint.sh"
 chmod +x "$bin/entrypoint.sh"
 # ep <helper stdout> <helper exit> [VAR=val…] → entrypoint output
 ep() {
@@ -117,8 +118,40 @@ grep -q 'sizing failed' <<<"$o" || { echo "FAIL: fallback not announced"; fail=1
 o=$(ep "oops" 0);                 check "garbage output → fallback"   0.9  "$(gm "$o")"
 o=$(ep "1.5" 0);                  check "out-of-format → fallback"    0.9  "$(gm "$o")"
 
+# --- tool parser: unset → ask vLLM (model_kind.py); explicit values are final ---
+# ek <kind stdout> <exit> [VAR=val…] → entrypoint output; the sizing step is pinned off.
+ek() {
+    local out="$1" rc="$2"; shift 2
+    printf 'import sys, pathlib\npathlib.Path("%s/kind-called").touch()\nif %s: print(%s)\nsys.exit(%s)\n' \
+        "$tmp" "$([[ -n $out ]] && echo True || echo False)" "\"$out\"" "$rc" > "$bin/kind"
+    rm -f "$tmp/kind-called"
+    env -i PATH="$bin:/usr/bin:/bin" VLLM_MODEL=org/m VLLM_GPU_MEM=0.5 "$@" bash "$bin/entrypoint.sh" 2>&1
+}
+tp() { grep -o -e '--tool-call-parser [a-z0-9_]*' <<<"$1" | awk 'NR==1{print $2}'; }
+
+o=$(ek chat 0);              check "chat → qwen3_xml"            qwen3_xml     "$(tp "$o")"
+o=$(ek transcription 0);     check "transcription → no parser"   ""            "$(tp "$o")"
+grep -q -e '--enable-auto-tool-choice' <<<"$o" && { echo "FAIL: transcription must not enable auto tool choice"; fail=1; }
+o=$(ek pooling 0);           check "pooling → no parser"         ""            "$(tp "$o")"
+o=$(ek "" 1);                check "probe fails → chat default"  qwen3_xml     "$(tp "$o")"
+grep -q 'could not classify' <<<"$o" || { echo "FAIL: probe failure not announced"; fail=1; }
+o=$(ek "banana" 0);          check "garbage kind → chat default" qwen3_xml     "$(tp "$o")"
+o=$(ek transcription 0 VLLM_TOOL_PARSER=auto); check "explicit auto probes" ""   "$(tp "$o")"
+o=$(ek transcription 0 VLLM_TOOL_PARSER=hermes); check "named parser wins" hermes "$(tp "$o")"
+[[ ! -e "$tmp/kind-called" ]] || { echo "FAIL: probe must not run when a parser is named"; fail=1; }
+o=$(ek chat 0 VLLM_TOOL_PARSER=);                check "empty → off"  ""           "$(tp "$o")"
+[[ ! -e "$tmp/kind-called" ]] || { echo "FAIL: probe must not run when the parser is forced off"; fail=1; }
+
+# classify(): transcription beats pooling beats chat (Whisper is also a "generate" runner)
+for case in "True True transcription" "True False transcription" "False True pooling" "False False chat"; do
+    set -- $case
+    check "classify($1,$2)" "$3" "$(python3 -I -c "
+import sys; sys.path.insert(0, '$SCRIPT_DIR')
+from model_kind import classify; print(classify($1, $2))")"
+done
+
 if [[ $fail -eq 0 ]]; then
-    echo "PASS: gpu_mem.py (sizing + duplicate weights + local dirs + knob validation + clamps + warnings + entrypoint wiring/fallback)"
+    echo "PASS: gpu_mem.py (sizing + duplicate weights + local dirs + knob validation + clamps + warnings + entrypoint sizing + tool-parser wiring/fallback)"
 else
     exit 1
 fi

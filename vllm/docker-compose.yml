@@ -33,6 +33,8 @@ services:
       - ./entrypoint.sh:/usr/local/bin/vllm-entrypoint:ro
       # Sizes --gpu-memory-utilization from the model's weights and the GPU.
       - ./gpu_mem.py:/usr/local/bin/vllm-gpu-mem:ro
+      # Asks vLLM whether the model is chat / speech-to-text / pooling.
+      - ./model_kind.py:/usr/local/bin/vllm-model-kind:ro
     environment:
       HF_TOKEN: ${HF_TOKEN:-}
       VLLM_USAGE_SOURCE: docker
@@ -47,9 +49,10 @@ services:
       # Empty → entrypoint omits --max-model-len; vLLM derives it from
       # the model's config.json.
       VLLM_MAX_LEN: ${VLLM_MAX_LEN:-}
-      # No colon on purpose: unset → qwen3_xml, but an explicit empty
-      # `VLLM_TOOL_PARSER=` in a variant stays empty (tool-calling off).
-      VLLM_TOOL_PARSER: ${VLLM_TOOL_PARSER-qwen3_xml}
+      # No colon on purpose: unset → auto (the entrypoint asks vLLM whether the
+      # model is chat: qwen3_xml, or off for speech-to-text / pooling), but an
+      # explicit empty `VLLM_TOOL_PARSER=` in a variant stays empty (off).
+      VLLM_TOOL_PARSER: ${VLLM_TOOL_PARSER-auto}
     entrypoint: ["/usr/local/bin/vllm-entrypoint"]
     command: []
     deploy:

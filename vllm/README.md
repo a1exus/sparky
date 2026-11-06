@@ -9,7 +9,8 @@ Smoke-tested on GB10 (compute capability 12.1) with `Qwen/Qwen3.6-27B` at `--max
 ## Supported model formats
 
 - **HuggingFace transformers format.** vLLM loads `safetensors` (preferred) and PyTorch `.bin` directly by repo ID. All 4 models cached on this host (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `Qwen/Qwen3.6-27B`, `Jackrong/Qwen3.5-27B-Claude-4.6-Opus-Reasoning-Distilled`) are this format.
-- **Non-chat models** (e.g. speech-to-text `openai/whisper-large-v3-turbo`, served on `/v1/audio/transcriptions`) load the same way, with `VLLM_TOOL_PARSER=` (empty) in their variant file — there is no chat/tool API to parse. `make sync` writes that line itself for architectures listed in the Makefile's `NON_CHAT_ARCHS` (currently `WhisperForConditionalGeneration`), on new and existing env files. Their context length comes from `config.json` as long as `VLLM_MAX_LEN` is unset (Whisper: 448); see [Configure](#configure).
+- **Non-chat models** (e.g. speech-to-text `openai/whisper-large-v3-turbo`, served on `/v1/audio/transcriptions`) load the same way and need nothing special in their variant file: at container start `entrypoint.sh` asks vLLM itself (`model_kind.py`) whether the model is chat, speech-to-text or pooling, and only chat models get a tool-call parser. No architecture list to maintain — a newly supported model family just works. Their context length comes from `config.json` as long as `VLLM_MAX_LEN` is unset (Whisper: 448); see [Configure](#configure).
+- **Checked before it starts.** `make sync`, `make list` and `make up` run `model-format.sh`, a structural check of the cached files: a repo needs a `config.json` with `model_type`/`architectures` plus safetensors or `pytorch_model*.bin` weights. GGUF repos (→ `llama-cpp/`), CTranslate2 conversions such as `faster-whisper-*-ct2` (→ speaches), NeMo checkpoints and the like fail it: `sync` skips them (`· skip`), `list` flags them (`✗ not loadable by vLLM`), and `make up` refuses with the reason. `make up ENV=<name> FORCE=1` overrides the check.
 - **Not supported as direct inputs:** GGUF (use [`llama-cpp/`](../llama-cpp/) for those), ONNX, custom TensorRT engines.
 - **Quantization formats supported on Hopper/Blackwell-class GPUs:** AWQ, GPTQ, FP8, INT4, BitsAndBytes, and a few more. Full hardware/format compatibility chart: <https://docs.vllm.ai/en/latest/quantization/supported_hardware.html>.
 - **Supported architectures** (model families like Llama, Qwen, Mistral, GPT-OSS, DeepSeek, Phi, Gemma, …) are listed here: <https://docs.vllm.ai/en/latest/models/supported_models.html>.
@@ -50,6 +51,8 @@ vllm/
 ├── docker-compose.yml
 ├── entrypoint.sh        # builds `vllm serve` argv from env; hosts the tool-call parser choice
 ├── gpu_mem.py           # sizes --gpu-memory-utilization per model (weights × scale + base, ÷ GPU total)
+├── model_kind.py        # asks vLLM if the model is chat / speech-to-text / pooling (tool-parser auto)
+├── model-format.sh      # structural "can vLLM load this repo?" check (GGUF, CTranslate2, NeMo, …)
 ├── Makefile             # make list / make sync / make up ENV=<name>
 ├── envs/                # one .env per model variant
 │   ├── README.md
@@ -72,7 +75,7 @@ Three model-shape knobs are deliberately **not** host-wide defaults, because no 
 
 - `VLLM_GPU_MEM` — unset by default, so `entrypoint.sh` runs `gpu_mem.py` to size `--gpu-memory-utilization` for the model being started: `ceil((weights × 1.25 + 8 GiB) / total GPU memory)`, clamped to 0.05–0.95. *Weights* are the model's top-level `*.safetensors` (else `*.bin`) in the HF cache, or the Hub's file sizes if it isn't downloaded yet; *total* is what torch reports, i.e. what vLLM checks against (`nvidia-smi` shows N/A on the GB10's unified memory). Examples on a 121.7 GiB GB10: Whisper-large-v3-turbo 0.09, gpt-oss-20b 0.20, Qwen3.8-27B 0.60, gpt-oss-120b 0.69. The `launching:` / `gpu-mem:` lines in `docker compose logs vllm` show the arithmetic, and a warning appears when less is free than requested. Set `VLLM_GPU_MEM=<0.0–1.0>` in a variant (or `.env`) to pin it; `VLLM_GPU_MEM_SCALE` / `VLLM_GPU_MEM_BASE_GIB` retune the formula for every auto-sized model (more KV cache and concurrency). If sizing fails the entrypoint falls back to vLLM's own 0.9 and says so.
 - `VLLM_MAX_LEN` — unset by default, so `--max-model-len` is omitted and vLLM derives the context length from the model's `config.json`. Set it per variant to cap a long-context model's KV-cache footprint. (A host-wide 32768 makes vLLM refuse to start models with a shorter native limit, e.g. Whisper's 448.)
-- `VLLM_TOOL_PARSER` — `--tool-call-parser`, default `qwen3_xml` (via `docker-compose.yml`). Set another parser per variant for other families, or `VLLM_TOOL_PARSER=` (empty) to drop `--enable-auto-tool-choice --tool-call-parser` entirely for models with no chat API, e.g. speech-to-text.
+- `VLLM_TOOL_PARSER` — `--tool-call-parser`, three states. **Unset** (the default) → `auto`: vLLM classifies the model at start; chat models get `qwen3_xml`, speech-to-text and pooling models get no parser (`--enable-auto-tool-choice --tool-call-parser` dropped); if it can't tell (e.g. a drafter or remote-code model) the chat default stays and the log says so (`model-kind:`). **A name** → that parser, for other families (set it per variant). **Empty** (`VLLM_TOOL_PARSER=`) → off, no questions asked.
 
 `make up ENV=<name>` chains both via `docker compose --env-file .env --env-file envs/<name>.env up -d` — variant wins where it specifies a value, falls back to `.env` otherwise. Edit `HF_TOKEN` once in `.env` and every variant picks it up; no token-duplication across variant files.
 
@@ -138,12 +141,11 @@ VLLM_SERVED_NAME=<friendly-name>
 # VLLM_MAX_LEN=65536   # optional cap; unset → model's native context
 ```
 
-Non-chat models need their own shape — e.g. `openai/whisper-large-v3-turbo` (served on `/v1/audio/transcriptions`). `make sync` produces the `VLLM_TOOL_PARSER=` line automatically for Whisper. No `VLLM_GPU_MEM` is needed: the 1.5 GiB of weights are sized to a ~0.09 share (~11 GiB), where a fixed 0.9 would demand ~109 GiB free:
+Non-chat models need their own shape — e.g. `openai/whisper-large-v3-turbo` (served on `/v1/audio/transcriptions`). Nothing special is needed for them: no `VLLM_TOOL_PARSER` (vLLM reports Whisper as speech-to-text, so no parser is passed) and no `VLLM_GPU_MEM`: the 1.5 GiB of weights are sized to a ~0.09 share (~11 GiB), where a fixed 0.9 would demand ~109 GiB free:
 
 ```
 VLLM_MODEL=openai/whisper-large-v3-turbo
 VLLM_SERVED_NAME=whisper-large-v3-turbo
-VLLM_TOOL_PARSER=
 ```
 
 For larger models, use a quantized variant (e.g. `Qwen/Qwen2.5-72B-Instruct-AWQ`) — vLLM supports AWQ, GPTQ, FP8, BitsAndBytes, and a few others. See <https://docs.vllm.ai/en/latest/quantization/supported_hardware.html>.
@@ -183,7 +185,6 @@ Hosts set up before `VLLM_MAX_LEN` became optional still carry `VLLM_MAX_LEN=327
 
 ```bash
 make sync                     # - env .env: removed retired default VLLM_MAX_LEN=32768 (backup: .env.bak)
-                              # ~ update whisper-large-v3-turbo.env — non-chat model: VLLM_TOOL_PARSER=
 make up ENV=<name>
 ```
 

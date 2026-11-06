@@ -19,7 +19,7 @@ Each variant here corresponds to a model **already downloaded** on this host (un
 - `VLLM_SERVED_NAME` — name surfaced via the OpenAI-compatible API.
 - `VLLM_GPU_MEM` — optional pin for the share of total GPU memory this instance may claim (0.0–1.0). Unset (the default) → `gpu_mem.py` sizes it from the model's weights and the GPU.
 - `VLLM_MAX_LEN` — max context length (optional; unset → vLLM derives it from the model's `config.json`).
-- `VLLM_TOOL_PARSER` — vLLM `--tool-call-parser` (optional; default `qwen3_xml`, empty disables tool-calling).
+- `VLLM_TOOL_PARSER` — vLLM `--tool-call-parser` (optional). Unset → auto: vLLM classifies the model at start (chat → `qwen3_xml`; speech-to-text / pooling → none). A name pins that parser; empty (`VLLM_TOOL_PARSER=`) disables tool-calling.
 
 Gated models need `HF_TOKEN` — set it once in the parent `.env`; every variant inherits it.
 
@@ -38,12 +38,12 @@ docker compose down
 Maintenance lives in the parent `Makefile` (`../Makefile`). It is **read-only against the cache** and **never downloads** anything itself — use `hf download <repo>` to populate the cache, then `make sync` to materialize an env file.
 
 ```bash
-make list      # variants + their HF repo; flags ⚠ collision, cached repos not
-               #   synced yet, and envs whose repo is no longer cached
+make list      # variants + their HF repo; flags ⚠ collision, ✗ repos vLLM can't load,
+               #   cached repos not synced yet, and envs whose repo is no longer cached
 make sync      # reconcile envs/ (and ../.env) against the cache:
                #   + create envs for newly cached models
                #   ↩ restore <name>.env from <name>.env.bak when a model returns
-               #   ~ update: add VLLM_TOOL_PARSER= for non-chat models (NON_CHAT_ARCHS)
+               #   · skip: repos vLLM can't load (GGUF, CTranslate2, NeMo, …) get no env
                #   → move <name>.env to <name>.env.bak when the model leaves
                #   - drop retired shipped defaults from ../.env (backup: ../.env.bak);
                #     `make up` runs this cleanup too

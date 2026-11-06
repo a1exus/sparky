@@ -54,16 +54,32 @@ if [[ -n "${VLLM_MAX_LEN:-}" ]]; then
     args+=(--max-model-len "${VLLM_MAX_LEN}")
 fi
 
-# Tool-calling: VLLM_TOOL_PARSER names vLLM's --tool-call-parser.
-# docker-compose.yml defaults it to `qwen3_xml`, which parses the XML
-# tool-call format Qwen3.x emits: <tool_call><function=NAME>
-# <parameter=PARAM>VAL</parameter></function></tool_call>. (The other
-# Qwen parser, `qwen3_coder`, is for a different JSON-style format.)
-# Set another parser per variant for other families, or set it empty
-# (`VLLM_TOOL_PARSER=`) for models with no chat/tool API at all — e.g.
-# speech-to-text like Whisper.
-if [[ -n "${VLLM_TOOL_PARSER:-}" ]]; then
-    args+=(--enable-auto-tool-choice --tool-call-parser "${VLLM_TOOL_PARSER}")
+# Tool-calling: VLLM_TOOL_PARSER names vLLM's --tool-call-parser, three-state
+# (docker-compose.yml passes "auto" when the variable is unset):
+#   unset / auto  ask vLLM what the model is (model_kind.py). Chat models get
+#                 `qwen3_xml`, which parses the XML tool-call format Qwen3.x
+#                 emits: <tool_call><function=NAME><parameter=PARAM>VAL
+#                 </parameter></function></tool_call>. (The other Qwen parser,
+#                 `qwen3_coder`, is for a different JSON-style format.)
+#                 Speech-to-text and pooling models (Whisper, embeddings,
+#                 rerankers, …) have no tool-call API: parser off. If vLLM
+#                 can't tell, the chat default stays.
+#   <name>        that parser, for other families (set it per variant).
+#   empty         parser off, no questions asked.
+# No architecture list lives here or in the Makefile: a model that vLLM
+# itself classifies as non-chat just works the day it is added.
+tool_parser="${VLLM_TOOL_PARSER-auto}"
+if [[ "$tool_parser" == auto ]]; then
+    if kind=$(python3 /usr/local/bin/vllm-model-kind --model "${VLLM_MODEL}") \
+       && [[ "$kind" =~ ^(chat|transcription|pooling)$ ]]; then
+        [[ "$kind" == chat ]] && tool_parser=qwen3_xml || tool_parser=""
+    else
+        tool_parser=qwen3_xml
+        echo "model-kind: could not classify ${VLLM_MODEL} — keeping the chat default (tool parser ${tool_parser}); set VLLM_TOOL_PARSER= to turn it off" >&2
+    fi
+fi
+if [[ -n "$tool_parser" ]]; then
+    args+=(--enable-auto-tool-choice --tool-call-parser "${tool_parser}")
 fi
 
 # vLLM's env scanner warns on any unrecognized var with the VLLM_ prefix

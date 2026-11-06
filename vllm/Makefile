@@ -23,12 +23,15 @@ HF_CACHE ?= /opt/hf/.cache/huggingface
 #   model (gpu_mem.py); a fixed 0.9 demanded ~109 GiB free even for Whisper.
 RETIRED_DEFAULTS := VLLM_MAX_LEN=32768 VLLM_MAX_LEN=8192 VLLM_GPU_MEM=0.9
 
-# Model architectures (config.json "architectures") with no chat/tool API —
-# `make sync` writes VLLM_TOOL_PARSER= (tool-calling off) into their env
-# files. Matched exactly; extend as new non-chat families are added.
-NON_CHAT_ARCHS := WhisperForConditionalGeneration
+# Structural "can vLLM load this repo at all?" check (GGUF, CTranslate2, …).
+# Used by `list` (flags), `sync` (skips creating variants) and `up` (refuses).
+# `make up ENV=<name> FORCE=1` bypasses it. What a loadable model *is* (chat,
+# speech-to-text, …) is decided by vLLM itself at container start — see
+# entrypoint.sh — so there is no per-architecture list to maintain here.
+FMT := ./model-format.sh
+FORCE ?=
 
-.PHONY: help list up sync _retire-defaults hf-cache hf-sync env-sync
+.PHONY: help list up sync _retire-defaults _check-fmt hf-cache hf-sync env-sync
 
 help:  ## Show this help.
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-12s\033[0m %s\n",$$1,$$2}' $(MAKEFILE_LIST)
@@ -44,7 +47,7 @@ help:  ## Show this help.
 	@echo "  docker compose ps"
 	@echo "  docker compose down"
 
-list:  ## List variants (make up ENV=<name>) with their HF repo; flags collisions and cached-but-unsynced repos.
+list: _check-fmt  ## List variants (make up ENV=<name>) with their HF repo; flags collisions and cached-but-unsynced repos.
 	@cached=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|' | sort || true); \
 	dupes=$$(while read -r r; do [[ -z "$$r" ]] && continue; echo "$$r" | cut -d/ -f2 | tr 'A-Z' 'a-z'; done <<<"$$cached" | sort | uniq -d); \
 	flag() { \
@@ -52,6 +55,8 @@ list:  ## List variants (make up ENV=<name>) with their HF repo; flags collision
 	    local short; short=$$(echo "$$1" | cut -d/ -f2 | tr 'A-Z' 'a-z'); \
 	    if grep -qFx "$$short" <<<"$$dupes"; then printf '  [⚠ collision]'; fi; \
 	    if ! grep -qFx "$$1" <<<"$$cached"; then printf '  [not cached — make sync archives it]'; fi; \
+	    local why; why=$$($(FMT) "$(HF_CACHE)/hub" "$$1" || true); \
+	    if [[ -n "$$why" ]]; then printf '  [✗ not loadable by vLLM: %s]' "$$why"; fi; \
 	}; \
 	w=$$(ls envs/*.env 2>/dev/null | sed 's|envs/||; s|\.env$$||' | awk '{ if (length > m) m = length } END { print m + 2 }' || true); \
 	[[ $${w:-0} -lt 20 ]] && w=20; \
@@ -65,10 +70,11 @@ list:  ## List variants (make up ENV=<name>) with their HF repo; flags collision
 	while read -r repo; do \
 	    [[ -z "$$repo" ]] && continue; \
 	    grep -qFx "$$repo" <<<"$$synced" && continue; \
-	    printf '%-*s %s  [not synced — run make sync]%s\n' "$$w" "-" "$$repo" "$$(flag "$$repo")"; \
+	    if $(FMT) "$(HF_CACHE)/hub" "$$repo" >/dev/null; then note="not synced — run make sync"; else note="skipped by sync"; fi; \
+	    printf '%-*s %s  [%s]%s\n' "$$w" "-" "$$repo" "$$note" "$$(flag "$$repo")"; \
 	done <<<"$$cached"
 
-up: _retire-defaults  ## Start with the given variant. Usage: make up ENV=<name>
+up: _check-fmt _retire-defaults  ## Start with the given variant. Usage: make up ENV=<name>
 	@if [[ -z "$(ENV)" ]]; then \
 	    echo "usage: make up ENV=<name>" >&2; \
 	    echo "available (make list for details):" >&2; ls envs/*.env 2>/dev/null | sed 's|envs/||; s|\.env$$||; s|^|  |' | sort >&2; \
@@ -79,12 +85,25 @@ up: _retire-defaults  ## Start with the given variant. Usage: make up ENV=<name>
 	    echo "available (make list for details):" >&2; ls envs/*.env 2>/dev/null | sed 's|envs/||; s|\.env$$||; s|^|  |' | sort >&2; \
 	    exit 1; \
 	fi
+	@repo=$$(grep -E '^VLLM_MODEL=' "envs/$(ENV).env" | head -1 | cut -d= -f2- || true); \
+	why=$$($(FMT) "$(HF_CACHE)/hub" "$$repo" || true); \
+	if [[ -n "$$why" && "$(FORCE)" != 1 ]]; then \
+	    echo "refusing to start $(ENV): $$repo — $$why" >&2; \
+	    echo "(FORCE=1 to try anyway: make up ENV=$(ENV) FORCE=1)" >&2; \
+	    exit 65; \
+	fi
 	@if [[ ! -f .env ]]; then \
 	    echo "→ first-time setup: copying .env.example → .env (placeholder values"; \
 	    echo "  so raw \`docker compose ps/logs/down\` work without --env-file)"; \
 	    cp .env.example .env; \
 	fi
 	$(COMPOSE) --env-file .env --env-file "envs/$(ENV).env" up -d
+
+# Internal (no `##`, so not in help). Fail loudly if the format checker is
+# missing: every call site swallows its exit status (`|| true`), so without
+# this a missing script would silently mark every repo loadable.
+_check-fmt:
+	@[[ -x "$(FMT)" ]] || { echo "error: $(FMT) is missing or not executable (run from the vllm/ directory)" >&2; exit 1; }
 
 # Internal (no `##`, so not in help): run by `up` and `sync`.
 _retire-defaults:
@@ -99,22 +118,12 @@ _retire-defaults:
 	fi
 
 
-sync: _retire-defaults  ## Reconcile envs/ against the HF cache (create / restore / rename / update / orphan to .bak) and drop retired defaults from .env.
-	@hub="$(HF_CACHE)/hub"; \
-	is_non_chat() { \
-	    local repo="$$1" snap arch; \
-	    for snap in "$$hub/models--$${repo/\//--}"/snapshots/*/; do \
-	        [[ -f "$$snap/config.json" ]] || continue; \
-	        for arch in $(NON_CHAT_ARCHS); do \
-	            grep -qE "\"$$arch\"" "$$snap/config.json" && return 0; \
-	        done; \
-	    done; \
-	    return 1; \
-	}; \
+sync: _check-fmt _retire-defaults  ## Reconcile envs/ against the HF cache (create / restore / rename / orphan to .bak; skips repos vLLM cannot load) and drop retired defaults from .env.
+	@hub="$(HF_CACHE)/hub"; fmt="$$PWD/$(FMT)"; \
 	cached=$$(ls -d $(HF_CACHE)/hub/models--* 2>/dev/null | sed 's|.*/models--||; s|--|/|' || true); \
 	if [[ -z "$$cached" ]]; then echo "no models in $(HF_CACHE)/hub/"; exit 0; fi; \
 	cd envs; \
-	created=0; restored=0; renamed=0; updated=0; orphaned=0; collisions=0; \
+	created=0; restored=0; renamed=0; skipped=0; orphaned=0; collisions=0; \
 	dupes=$$(echo "$$cached" | while read -r r; do [[ -z "$$r" ]] && continue; echo "$$r" | cut -d/ -f2 | tr 'A-Z' 'a-z'; done | sort | uniq -d); \
 	if [[ -n "$$dupes" ]]; then \
 	    while read -r d; do \
@@ -125,6 +134,11 @@ sync: _retire-defaults  ## Reconcile envs/ against the HF cache (create / restor
 	fi; \
 	while read -r repo; do \
 	    [[ -z "$$repo" ]] && continue; \
+	    why=$$("$$fmt" "$$hub" "$$repo" || true); \
+	    if [[ -n "$$why" ]]; then \
+	        printf '· skip    %s — %s\n' "$$repo" "$$why"; \
+	        skipped=$$((skipped + 1)); continue; \
+	    fi; \
 	    short=$$(echo "$$repo" | cut -d/ -f2 | tr 'A-Z' 'a-z'); \
 	    if echo "$$dupes" | grep -qFx "$$short"; then \
 	        org=$$(echo "$$repo" | cut -d/ -f1 | tr 'A-Z' 'a-z'); \
@@ -172,21 +186,11 @@ sync: _retire-defaults  ## Reconcile envs/ against the HF cache (create / restor
 	            echo "# VLLM_GPU_MEM=0.5"; \
 	            echo "# Context length; unset → derived from the model's config.json."; \
 	            echo "# VLLM_MAX_LEN=32768"; \
-	            echo "# Tool-call parser; empty disables tool-calling (non-chat models)."; \
+	            echo "# Tool-call parser; unset → auto (chat models: qwen3_xml; speech-to-text and"; \
+	            echo "# other non-chat models: off, as detected by vLLM). Empty forces off."; \
 	            echo "# VLLM_TOOL_PARSER="; \
 	        } > "$$file"; \
 	        created=$$((created + 1)); \
-	    fi; \
-	    if [[ -f "$$file" ]] && grep -qE "^VLLM_MODEL=$$repo[[:space:]]*\$$" "$$file" \
-	       && ! grep -qE '^VLLM_TOOL_PARSER=' "$$file" && is_non_chat "$$repo"; then \
-	        { \
-	            echo ""; \
-	            echo "# Set by hf-sync: architecture is in NON_CHAT_ARCHS (no chat/tool"; \
-	            echo "# API, e.g. speech-to-text) — tool-calling flags omitted."; \
-	            echo "VLLM_TOOL_PARSER="; \
-	        } >> "$$file"; \
-	        printf '~ update  %s — non-chat model: VLLM_TOOL_PARSER= (tool-calling off)\n' "$$file"; \
-	        updated=$$((updated + 1)); \
 	    fi; \
 	done <<<"$$cached"; \
 	for f in *.env; do \
@@ -199,7 +203,7 @@ sync: _retire-defaults  ## Reconcile envs/ against the HF cache (create / restor
 	        orphaned=$$((orphaned + 1)); \
 	    fi; \
 	done; \
-	echo "summary — $$created created, $$restored restored, $$renamed renamed, $$updated updated, $$orphaned orphaned, $$collisions collisions"
+	echo "summary — $$created created, $$restored restored, $$renamed renamed, $$skipped skipped, $$orphaned orphaned, $$collisions collisions"
 
 # Deprecated names — kept so muscle memory and old docs still work.
 hf-sync env-sync:
