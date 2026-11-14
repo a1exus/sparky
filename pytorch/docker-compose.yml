@@ -1,0 +1,51 @@
+name: pytorch
+
+services:
+  pytorch:
+    # NGC build: stock Docker Hub pytorch images may lack aarch64 / Blackwell
+    # (GB10, compute capability 12.1) support.
+    image: nvcr.io/nvidia/pytorch:${PYTORCH_TAG:?PYTORCH_TAG must be set in .env}
+    container_name: pytorch
+    # `no` (not unless-stopped) — GPU is exclusive with vllm / llama-cpp / ollama.
+    # Start on demand with `make up`.
+    restart: "no"
+    # Dev container: idles until `make shell` / `make run` exec into it.
+    command: ["sleep", "infinity"]
+    init: true                      # reap zombie dataloader workers
+    # Run as the host user so files written to the bind mounts aren't root-owned.
+    # The Makefile exports these from `id -u` / `id -g`.
+    user: "${PYTORCH_UID:-1000}:${PYTORCH_GID:-1000}"
+    working_dir: /workspace
+    ipc: host                       # required for NCCL / Torch shared-memory paths
+    shm_size: "${SHM_SIZE:-16gb}"
+    ulimits:                        # NVIDIA's documented run flags for NGC containers
+      memlock: -1
+      stack: 67108864
+    volumes:
+      # Code, datasets, checkpoints.
+      - ${WORKSPACE:-./workspace}:/workspace
+      # HuggingFace CLI cache, shared with the host and the other stacks.
+      - ${HF_CACHE_HOST:-/opt/hf/.cache/huggingface}:/hf
+      # HOME, pip and torch-hub caches. A bind dir (not a named volume): a fresh
+      # named volume is root-owned and the non-root user couldn't write to it.
+      - ${CACHE_HOST:-./cache}:/cache
+    environment:
+      HOME: /cache/home
+      PIP_CACHE_DIR: /cache/pip
+      TORCH_HOME: /cache/torch
+      HF_HOME: /hf
+      HF_TOKEN: ${HF_TOKEN:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
