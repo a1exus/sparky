@@ -77,8 +77,15 @@ run_make "pytorch" check
 sandbox
 echo 'PYTORCH_TAG=x' >"$T/.env"
 run_make "" up
+[[ -d "$T/cache/home" ]] && pass up_creates_home_dir || fail up_creates_home_dir "no cache/home"
 want="uid=$(id -u) gid=$(id -g)"
 [[ $(logged " up -d \[$want\]") -eq 1 ]] \
     && pass uid_gid_exported || fail uid_gid_exported "log=$(cat "$T/stub.log")"
+
+sandbox
+printf 'PYTORCH_TAG=x\nWORKSPACE=%s/ws\nCACHE_HOST=%s/c\n' "$T" "$T" >"$T/.env"
+run_make "" up
+[[ $rc -eq 0 && -d "$T/ws" && -d "$T/c/home" && ! -e "$T/workspace" && ! -e "$T/cache" ]] \
+    && pass up_honors_env_paths || fail up_honors_env_paths "rc=$rc out=$out"
 
 ((fails == 0)) || { echo "$fails failure(s)"; exit 1; }

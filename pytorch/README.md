@@ -36,7 +36,7 @@ make check               # torch version, CUDA build, device name; exits 1 if CU
 
 `cache/` is a bind-mounted host directory rather than a named volume: a fresh named volume is root-owned and the non-root user couldn't write to it. `pip install` lands there and survives `make down`.
 
-Repos downloaded by vLLM's root container are readable here but not modifiable by your user.
+vLLM's container runs as root, so the shared HF cache may be root-owned: cached repos are readable here, but downloading a new model or `hf auth login` from this container can fail with a permission error. Download with the host's `hf` CLI, or point `HF_CACHE_HOST` at a directory you own.
 
 ## Configuration
 

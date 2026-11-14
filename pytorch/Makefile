@@ -39,7 +39,7 @@ help:  ## Show this help.
 	@echo "  make run CMD=\"python train.py\"  — run a command in /workspace"
 
 up: _env _gpu-busy-warn  ## Start the dev container (creates .env, workspace/ and cache/ on first run).
-	@mkdir -p workspace cache
+	@set -a; . ./.env; set +a; mkdir -p "$${WORKSPACE:-workspace}" "$${CACHE_HOST:-cache}/home"
 	$(COMPOSE) up -d
 
 down:  ## Stop and remove the container (workspace/ and cache/ are kept).

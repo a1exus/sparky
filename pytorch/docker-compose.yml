@@ -34,6 +34,10 @@ services:
       PIP_CACHE_DIR: /cache/pip
       TORCH_HOME: /cache/torch
       HF_HOME: /hf
+      # The UID has no passwd entry in the image, and getpass.getuser() (used by
+      # torch.compile's default cache dir) raises without these.
+      USER: pytorch
+      TORCHINDUCTOR_CACHE_DIR: /cache/inductor
       HF_TOKEN: ${HF_TOKEN:-}
     deploy:
       resources:

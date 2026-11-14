@@ -39,6 +39,9 @@ check no_labels '(.labels // {}) | length' '0'
 check no_traefik_network '(.networks // {}) | has("traefik")' 'false'
 check user_default '.user' '1000:1000'
 check hf_home '.environment.HF_HOME' '/hf'
+# torch.compile and getpass.getuser() break for a UID with no passwd entry.
+check inductor_cache '.environment.TORCHINDUCTOR_CACHE_DIR' '/cache/inductor'
+check user_env '.environment.USER' 'pytorch'
 
 targets=$(svc '.volumes | map(.target) | sort | join(",")')
 for t in /workspace /hf /cache; do
