@@ -1,6 +1,6 @@
 # PyTorch stack — design
 
-**Status:** proposed, awaiting approval.
+**Status:** implemented on `feat/pytorch-stack`; the GB10 tag check is pending (see the plan's Task 3, step 4).
 **Date:** 2026-11-13.
 **Services:** new `pytorch/`.
 
@@ -47,7 +47,7 @@ pytorch/
 - **Image:** `nvcr.io/nvidia/pytorch:${PYTORCH_TAG}` (NGC; built for Blackwell/aarch64). Tag required (`:?`) like `VLLM_TAG`.
 - **Compose:** `container_name: pytorch`, `restart: "no"`, `ipc: host`, `shm_size`, GPU reservation `count: all`, `security_opt: no-new-privileges`, logging caps, `init: true` (reaps zombies), `command: ["sleep","infinity"]`. `ulimits` memlock/stack as NGC recommends.
 - **User:** `user: "${UID}:${GID}"` so workspace files aren't root-owned; `HOME` points into a writable cache volume.
-- **Mounts:** `${WORKSPACE:-./workspace}:/workspace` (code, checkpoints); `${HF_CACHE_HOST:-/opt/hf/.cache/huggingface}:/cache/huggingface` with `HF_HOME` set; named volume `pytorch-cache` for pip / torch hub caches.
+- **Mounts:** `${WORKSPACE:-./workspace}:/workspace` (code, checkpoints); `${HF_CACHE_HOST:-/opt/hf/.cache/huggingface}:/hf` with `HF_HOME=/hf`; a bind-mounted `./cache` at `/cache` for `HOME` and the pip / torch hub caches (a named volume would be root-owned, and the container runs non-root).
 - **Network:** none published; no `traefik` network join.
 - **Makefile:** `up`, `down`, `shell` (`exec -it bash`), `run CMD="python train.py"`, `check` (prints torch version, `torch.cuda.is_available()`, device name, capability), `logs`. `up` warns if another GPU-heavy container (`vllm`, `llama-cpp`) is running; it warns, never stops it.
 - **Secrets:** `HF_TOKEN` via `.env` only, never printed or baked.

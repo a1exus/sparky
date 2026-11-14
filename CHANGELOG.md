@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- **`pytorch/`: on-demand NGC PyTorch dev container.** New compose stack for running PyTorch work on the GB10: `nvcr.io/nvidia/pytorch:${PYTORCH_TAG}` (tag required, no default), runs as the host user, GPU reserved, `ipc: host`, `shm_size` 16gb, no published ports and no Traefik route. `make up` / `down` / `shell` / `run CMD=…` / `check` / `logs`; `up` warns when vLLM or llama.cpp holds the GPU and never stops them. The HF cache is shared with the other stacks; `HOME` and pip/torch caches live in a bind-mounted `cache/` (a fresh named volume is root-owned). Covered by `pytorch/test-compose.sh` and `pytorch/test-make.sh`, which need no GPU. On a host: `cd pytorch && cp .env.example .env`, set `PYTORCH_TAG`, `make up && make check`.
+
 ### Changed
 
 - **`vllm/`: new models no longer need code changes.** The two places that hard-coded model knowledge are now data-driven.

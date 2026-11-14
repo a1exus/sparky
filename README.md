@@ -40,6 +40,7 @@ TLS comes from three different roots: Traefik mints its own internal CA (clients
 ├── tailscale/     # Tailscale sidecar — tailnet ingress
 ├── vllm/          # vLLM inference server (HF safetensors)
 ├── llama-cpp/     # llama.cpp inference server (GGUF)
+├── pytorch/       # NGC PyTorch dev container (on demand, GPU)
 ├── open-webui/    # Open WebUI + Ollama (chat UI)
 ├── netdata/       # Real-time observability
 ├── mdns/          # Host-side mDNS aliases helper
@@ -66,6 +67,7 @@ Each stack has its own `README.md` — start there for deploy / configure / upgr
 | [`tailscale/`](tailscale/) | Tailscale sidecar — tailnet-only ingress over WireGuard, optional Serve overlay fronts `traefik` | `https://spark-1822.<tailnet>.ts.net` |
 | [`vllm/`](vllm/) | vLLM inference server (HF safetensors), tool-calling (`qwen3_xml` by default, set per variant) | `https://vllm.spark-1822.local` |
 | [`llama-cpp/`](llama-cpp/) | llama.cpp GPU-accelerated inference server (GGUF). Router mode (default) serves every GGUF in the HF cache on demand; classic single-model mode also supported. OpenAI-compatible API + web UI | `https://llama.spark-1822.local` |
+| [`pytorch/`](pytorch/) | On-demand NGC PyTorch dev container (GPU); `make shell` / `make run`, no HTTP service | none (no ingress) |
 | [`open-webui/`](open-webui/) | Open WebUI + Ollama (GPU on Ollama only) | `https://open-webui.spark-1822.local`, `https://ollama.spark-1822.local` |
 | [`netdata/`](netdata/) | Real-time host + container telemetry | `https://netdata.spark-1822.local` |
 | [`mdns/`](mdns/) | Host systemd template publishing `<sub>.spark-1822.local` mDNS aliases | host-level |
