@@ -50,3 +50,7 @@ MicronTechnology
 nvidia
 NVIDIA AI Workbench
 hf
+
+# pytorch/ dev container — user code and caches live next to the compose file
+pytorch/workspace/
+pytorch/cache/

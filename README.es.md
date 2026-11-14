@@ -40,6 +40,7 @@ El TLS proviene de tres raíces distintas: Traefik emite su propia CA interna (l
 ├── tailscale/     # Sidecar de Tailscale — ingreso a la tailnet
 ├── vllm/          # Servidor de inferencia vLLM (safetensors de HF)
 ├── llama-cpp/     # Servidor de inferencia llama.cpp (GGUF)
+├── pytorch/       # Contenedor de desarrollo PyTorch de NGC (bajo demanda, GPU)
 ├── open-webui/    # Open WebUI + Ollama (interfaz de chat)
 ├── netdata/       # Observabilidad en tiempo real
 ├── mdns/          # Ayudante de alias mDNS del lado del host
@@ -66,6 +67,7 @@ Cada stack tiene su propio `README.md` — empieza ahí para detalles de desplie
 | [`tailscale/`](tailscale/) | Sidecar de Tailscale — ingreso exclusivo a la tailnet sobre WireGuard, overlay opcional de Serve delante de `traefik` | `https://spark-1822.<tailnet>.ts.net` |
 | [`vllm/`](vllm/) | Servidor de inferencia vLLM (safetensors de HF), con tool-calling (`qwen3_xml` por defecto, configurable por variante) | `https://vllm.spark-1822.local` |
 | [`llama-cpp/`](llama-cpp/) | Servidor de inferencia llama.cpp acelerado por GPU (GGUF). El modo router (por defecto) sirve bajo demanda cada GGUF de la caché de HF; también se admite el modo clásico de un solo modelo. API compatible con OpenAI + interfaz web | `https://llama.spark-1822.local` |
+| [`pytorch/`](pytorch/) | Contenedor de desarrollo PyTorch de NGC (GPU) bajo demanda; `make shell` / `make run`, sin servicio HTTP | ninguna (sin ingress) |
 | [`open-webui/`](open-webui/) | Open WebUI + Ollama (GPU solo en Ollama) | `https://open-webui.spark-1822.local`, `https://ollama.spark-1822.local` |
 | [`netdata/`](netdata/) | Telemetría en tiempo real de host + contenedores | `https://netdata.spark-1822.local` |
 | [`mdns/`](mdns/) | Plantilla systemd del host que publica alias mDNS `<sub>.spark-1822.local` | a nivel de host |
