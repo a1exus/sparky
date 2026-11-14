@@ -40,6 +40,7 @@ TLS 证书来自三个不同的根：Traefik 自签发内部 CA（客户端只�
 ├── tailscale/     # Tailscale sidecar —— tailnet 入口
 ├── vllm/          # vLLM 推理服务器（HF safetensors）
 ├── llama-cpp/     # llama.cpp 推理服务器（GGUF）
+├── pytorch/       # NGC PyTorch 开发容器（按需启动，GPU）
 ├── open-webui/    # Open WebUI + Ollama（聊天界面）
 ├── netdata/       # 实时可观测性
 ├── mdns/          # 主机侧 mDNS 别名辅助服务
@@ -66,6 +67,7 @@ TLS 证书来自三个不同的根：Traefik 自签发内部 CA（客户端只�
 | [`tailscale/`](tailscale/) | Tailscale sidecar —— 基于 WireGuard 的 tailnet 专属入口，可选的 Serve overlay 前置 `traefik` | `https://spark-1822.<tailnet>.ts.net` |
 | [`vllm/`](vllm/) | vLLM 推理服务器（HF safetensors），支持工具调用（默认 `qwen3_xml`，可按变体配置） | `https://vllm.spark-1822.local` |
 | [`llama-cpp/`](llama-cpp/) | GPU 加速的 llama.cpp 推理服务器（GGUF）。router 模式（默认）按需提供 HF 缓存中的任意 GGUF；同时支持经典单模型模式。兼容 OpenAI 的 API + Web 界面 | `https://llama.spark-1822.local` |
+| [`pytorch/`](pytorch/) | 按需启动的 NGC PyTorch 开发容器（GPU）；`make shell` / `make run`，无 HTTP 服务 | 无（无 ingress） |
 | [`open-webui/`](open-webui/) | Open WebUI + Ollama（仅 Ollama 使用 GPU） | `https://open-webui.spark-1822.local`、`https://ollama.spark-1822.local` |
 | [`netdata/`](netdata/) | 主机 + 容器的实时遥测数据 | `https://netdata.spark-1822.local` |
 | [`mdns/`](mdns/) | 主机 systemd 模板，用于发布 `<sub>.spark-1822.local` mDNS 别名 | 主机级别 |

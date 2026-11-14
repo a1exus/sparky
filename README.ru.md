@@ -40,6 +40,7 @@ TLS происходит из трёх разных корней: Traefik вып
 ├── tailscale/     # Сайдкар Tailscale — вход через tailnet
 ├── vllm/          # Сервер инференса vLLM (safetensors от HF)
 ├── llama-cpp/     # Сервер инференса llama.cpp (GGUF)
+├── pytorch/       # Контейнер разработки NGC PyTorch (по запросу, GPU)
 ├── open-webui/    # Open WebUI + Ollama (интерфейс чата)
 ├── netdata/       # Наблюдаемость в реальном времени
 ├── mdns/          # Помощник алиасов mDNS на стороне хоста
@@ -66,6 +67,7 @@ TLS происходит из трёх разных корней: Traefik вып
 | [`tailscale/`](tailscale/) | Сайдкар Tailscale — вход только через tailnet поверх WireGuard, опциональный оверлей Serve перед `traefik` | `https://spark-1822.<tailnet>.ts.net` |
 | [`vllm/`](vllm/) | Сервер инференса vLLM (safetensors от HF), с поддержкой вызова инструментов (`qwen3_xml` по умолчанию, настраивается для каждого варианта) | `https://vllm.spark-1822.local` |
 | [`llama-cpp/`](llama-cpp/) | Сервер инференса llama.cpp с ускорением GPU (GGUF). Режим router (по умолчанию) отдаёт по запросу любой GGUF из кэша HF; также поддерживается классический режим с одной моделью. API, совместимый с OpenAI, + веб-интерфейс | `https://llama.spark-1822.local` |
+| [`pytorch/`](pytorch/) | Контейнер разработки NGC PyTorch (GPU) по запросу; `make shell` / `make run`, без HTTP-сервиса | нет (без ingress) |
 | [`open-webui/`](open-webui/) | Open WebUI + Ollama (GPU только у Ollama) | `https://open-webui.spark-1822.local`, `https://ollama.spark-1822.local` |
 | [`netdata/`](netdata/) | Телеметрия хоста и контейнеров в реальном времени | `https://netdata.spark-1822.local` |
 | [`mdns/`](mdns/) | Шаблон systemd на хосте, публикующий алиасы mDNS `<sub>.spark-1822.local` | уровень хоста |
